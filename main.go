@@ -1,10 +1,10 @@
 package main
 
 import (
-	_ "embed"     // 即使沒直接調用，加了 //go:embed 也要保留
+	_ "embed"
 	"fmt"
-	"os/exec"     // 用於執行 ping
-	"runtime"      // 用於判斷 OS (Windows/Linux)
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -17,16 +17,17 @@ import (
 //go:embed tasks.yaml
 var embeddedYaml []byte
 
-// --- 模擬 Python 的常量 ---
+// --- 常量與樣式 ---
 var (
 	RTT_SCALE = 10.0
 	WHEEL     = []string{"|", "/", "-", "\\"}
-	
-	// 樣式
+
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
 	upStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("10")) // 綠色
 	downStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))  // 紅色
 	dimStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	// 掃描箭頭樣式 (青色)
+	arrowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
 )
 
 type Heartbeat struct {
@@ -51,12 +52,11 @@ type Config struct {
 }
 
 type model struct {
-	devices []*Device
-	step    int
-	width   int
+	devices   []*Device
+	step      int
+	scanIndex int // 新增：掃描指示器的位置
 }
 
-// --- 訊息定義 ---
 type tickMsg time.Time
 type spinMsg struct{}
 type pingRes struct {
@@ -65,9 +65,10 @@ type pingRes struct {
 	success bool
 }
 
-// --- 核心：復刻 Python 的 get_result_char ---
 func getResultChar(rtt float64, success bool) string {
-	if !success { return "X" }
+	if !success {
+		return "X"
+	}
 	if rtt < RTT_SCALE*1 { return "▁" }
 	if rtt < RTT_SCALE*2 { return "▂" }
 	if rtt < RTT_SCALE*3 { return "▃" }
@@ -78,7 +79,6 @@ func getResultChar(rtt float64, success bool) string {
 	return "█"
 }
 
-// --- Ping 執行器 ---
 func runPing(idx int, ip string) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
@@ -88,7 +88,7 @@ func runPing(idx int, ip string) tea.Cmd {
 		} else {
 			cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
 		}
-		
+
 		err := cmd.Run()
 		rtt := float64(time.Since(start).Milliseconds())
 		return pingRes{idx: idx, rtt: rtt, success: err == nil}
@@ -102,7 +102,9 @@ func (m model) Init() tea.Cmd {
 func (m model) pingAll() tea.Cmd {
 	var cmds []tea.Cmd
 	for i, d := range m.devices {
-		if d.Name == "---" { continue }
+		if d.Name == "---" {
+			continue
+		}
 		d.Loading = true
 		cmds = append(cmds, runPing(i, d.IP))
 	}
@@ -111,14 +113,17 @@ func (m model) pingAll() tea.Cmd {
 }
 
 func spinTick() tea.Cmd {
-	return tea.Tick(time.Millisecond*200, func(t time.Time) tea.Msg { return spinMsg{} })
+	// 稍微加快一點旋轉與掃描速度 (150ms)
+	return tea.Tick(time.Millisecond*150, func(t time.Time) tea.Msg { return spinMsg{} })
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if msg.String() == "q" || msg.String() == "ctrl+c" { return m, tea.Quit }
-		if msg.String() == "r" { // 復刻 Python 的 refresh
+		if msg.String() == "q" || msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		if msg.String() == "r" {
 			for _, d := range m.devices {
 				d.History = nil
 				d.Snt, d.Loss, d.TotalRTT = 0, 0, 0
@@ -127,6 +132,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinMsg:
 		m.step++
+		// 更新掃描指標位置
+		if len(m.devices) > 0 {
+			m.scanIndex = m.step % len(m.devices)
+		}
 		return m, spinTick()
 
 	case tickMsg:
@@ -137,45 +146,57 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		d.Loading = false
 		d.Snt++
 		char := getResultChar(msg.rtt, msg.success)
-		
+
 		if msg.success {
 			d.LastRTT = msg.rtt
 			d.TotalRTT += msg.rtt
 		} else {
 			d.Loss++
 		}
-		
+
 		d.History = append([]Heartbeat{{Char: char, Success: msg.success}}, d.History...)
-		if len(d.History) > 20 { d.History = d.History[:20] }
+		if len(d.History) > 30 { // 增加歷史長度到 30 格
+			d.History = d.History[:30]
+		}
 	}
 	return m, nil
 }
 
 func (m model) View() string {
 	var s strings.Builder
-	
+
 	// 1. 標題與旋轉木馬 (Wheel)
 	wheelChar := WHEEL[m.step%len(WHEEL)]
 	s.WriteString(fmt.Sprintf("\n %s %s  %s\n", titleStyle.Render("Dead Man"), wheelChar, dimStyle.Render("RTT Scale: "+strconv.Itoa(int(RTT_SCALE))+"ms")))
-	
-	// 2. 表頭
-	s.WriteString(fmt.Sprintf("\n %-15s %-15s %5s %5s %5s %5s  %-20s\n", 
-		"HOSTNAME", "ADDRESS", "LOSS", "RTT", "AVG", "SNT", "RESULT"))
-	s.WriteString(dimStyle.Render(strings.Repeat("─", 80)) + "\n")
 
-	// 3. 目錄
-	for _, d := range m.devices {
+	// 2. 表頭 (增加了箭頭空間的偏移)
+	s.WriteString(fmt.Sprintf("\n    %-15s %-15s %5s %5s %5s %5s  %-20s\n",
+		"HOSTNAME", "ADDRESS", "LOSS", "RTT", "AVG", "SNT", "RESULT"))
+	s.WriteString(dimStyle.Render(" " + strings.Repeat("─", 85)) + "\n")
+
+	// 3. 設備目錄
+	for i, d := range m.devices {
+		// 掃描指示器邏輯
+		indicator := "  "
+		if i == m.scanIndex {
+			indicator = arrowStyle.Render("> ")
+		}
+
 		if d.Name == "---" {
-			s.WriteString(dimStyle.Render(" " + strings.Repeat("-", 75)) + "\n")
+			s.WriteString(fmt.Sprintf("%s%s\n", indicator, dimStyle.Render(strings.Repeat("-", 80))))
 			continue
 		}
 
 		lossRate := 0
-		if d.Snt > 0 { lossRate = (d.Loss * 100) / d.Snt }
+		if d.Snt > 0 {
+			lossRate = (d.Loss * 100) / d.Snt
+		}
 		avg := 0.0
-		if d.Snt-d.Loss > 0 { avg = d.TotalRTT / float64(d.Snt-d.Loss) }
+		if d.Snt-d.Loss > 0 {
+			avg = d.TotalRTT / float64(d.Snt-d.Loss)
+		}
 
-		// 歷史紀錄字串
+		// 歷史紀錄渲染
 		var histStr strings.Builder
 		for _, h := range d.History {
 			if h.Success {
@@ -185,27 +206,35 @@ func (m model) View() string {
 			}
 		}
 
-		// 判斷當前整行顏色 (Python 邏輯: 斷線會變粗體/亮色)
+		// 斷線加粗提醒
 		rowStyle := lipgloss.NewStyle()
-		if d.Snt > 0 && !d.History[0].Success {
+		if len(d.History) > 0 && !d.History[0].Success {
 			rowStyle = rowStyle.Bold(true).Foreground(lipgloss.Color("15"))
 		}
 
-		line := fmt.Sprintf(" %-15s %-15s %4d%% %5.0f %5.0f %5d  %s",
-			d.Name, d.IP, lossRate, d.LastRTT, avg, d.Snt, histStr.String())
-		
-		if d.Loading { line += " 🛰️" }
+		line := fmt.Sprintf("%s %-15s %-15s %4d%% %5.0f %5.0f %5d  %s",
+			indicator, d.Name, d.IP, lossRate, d.LastRTT, avg, d.Snt, histStr.String())
+
+		if d.Loading && i == m.scanIndex {
+			line += " 🛰️"
+		}
 		s.WriteString(rowStyle.Render(line) + "\n")
 	}
 
-	s.WriteString("\n " + dimStyle.Render("Keys: (q)uit, (r)efresh stats"))
+	s.WriteString("\n " + dimStyle.Render("Keys: (q)uit, (r)efresh stats | Scan Pulse active"))
 	return s.String()
 }
 
 func main() {
 	var cfg Config
-	yaml.Unmarshal(embeddedYaml, &cfg)
-	if cfg.Scale > 0 { RTT_SCALE = cfg.Scale }
+	err := yaml.Unmarshal(embeddedYaml, &cfg)
+	if err != nil {
+		fmt.Printf("YAML Error: %v", err)
+		return
+	}
+	if cfg.Scale > 0 {
+		RTT_SCALE = cfg.Scale
+	}
 
 	p := tea.NewProgram(model{devices: cfg.Devices}, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
