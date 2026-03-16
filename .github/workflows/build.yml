@@ -59,7 +59,7 @@ jobs:
           fi
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: deadman-${{ matrix.goos }}-${{ matrix.goarch }}
           path: deadman-${{ matrix.goos }}-${{ matrix.goarch }}*
