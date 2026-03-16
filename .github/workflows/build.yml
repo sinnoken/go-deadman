@@ -3,8 +3,11 @@ name: Build and Release
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch: # <--- 加入這一行，開啟手動觸發開關
+    
 permissions:
   contents: write # 必備：允許 Actions 建立 Release
 
