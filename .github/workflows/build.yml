@@ -33,7 +33,7 @@ jobs:
       - name: Initialize & Install Dependencies
         run: |
           if [ ! -f go.mod ]; then
-            go mod init ssh-executor
+            go mod init go-deadman
           fi
           go mod tidy
 
