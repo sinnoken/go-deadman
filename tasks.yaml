@@ -1,0 +1,12 @@
+scale: 10
+interval: 1s
+devices:
+  - name: "Google-DNS"
+    ip: "8.8.8.8"
+  - name: "Cloudflare"
+    ip: "1.1.1.1"
+  - name: "Local-Gateway"
+    ip: "192.168.1.1"
+  - name: "---" # 分隔線
+  - name: "Custom-Host"
+    ip: "10.0.0.1"
