@@ -1,13 +1,10 @@
 package main
 
 import (
-	"context"
-	_ "embed"
+	_ "embed"     // 即使沒直接調用，加了 //go:embed 也要保留
 	"fmt"
-	"os"
-	"os/exec"
-	"regexp"
-	"runtime"
+	"os/exec"     // 用於執行 ping
+	"runtime"      // 用於判斷 OS (Windows/Linux)
 	"strconv"
 	"strings"
 	"time"
