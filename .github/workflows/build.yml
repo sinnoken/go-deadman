@@ -1,0 +1,56 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+
+jobs:
+  build:
+    name: Build Binary
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: windows
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64 # 給 M1/M2 Mac 用
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22' # 確保版本支援 embed
+
+      - name: Build Binary
+        run: |
+          # 定義檔名
+          BINARY_NAME=deadman-${{ matrix.goos }}-${{ matrix.goarch }}
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME=${BINARY_NAME}.exe
+          fi
+          
+          # 核心編譯：確保 tasks.yaml 存在於目錄中以便 embed
+          # 使用 -s -w 移除除錯資訊以瘦身
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+          go build -ldflags="-s -w" -o "$BINARY_NAME" .
+
+          # 針對 Windows x64 進行 UPX 壓縮
+          if [ "${{ matrix.goos }}" = "windows" ] && [ "${{ matrix.goarch }}" = "amd64" ]; then
+            sudo apt-get update && sudo apt-get install -y upx
+            upx --best "$BINARY_NAME"
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deadman-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: deadman-${{ matrix.goos }}-${{ matrix.goarch }}*
