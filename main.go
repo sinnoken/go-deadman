@@ -54,10 +54,10 @@ type Config struct {
 type model struct {
 	devices   []*Device
 	step      int
-	scanIndex int // 新增：掃描指示器的位置
+	scanIndex int
 }
 
-type tickMsg time.Time
+// 移除 tickMsg，現在全部由 spinMsg 驅動
 type spinMsg struct{}
 type pingRes struct {
 	idx     int
@@ -96,25 +96,13 @@ func runPing(idx int, ip string) tea.Cmd {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(m.pingAll(), spinTick())
-}
-
-func (m model) pingAll() tea.Cmd {
-	var cmds []tea.Cmd
-	for i, d := range m.devices {
-		if d.Name == "---" {
-			continue
-		}
-		d.Loading = true
-		cmds = append(cmds, runPing(i, d.IP))
-	}
-	cmds = append(cmds, tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }))
-	return tea.Batch(cmds...)
+	// 啟動時不再發起大批次 Ping，只啟動掃描計時器
+	return spinTick()
 }
 
 func spinTick() tea.Cmd {
-	// 稍微加快一點旋轉與掃描速度 (150ms)
-	return tea.Tick(time.Millisecond*150, func(t time.Time) tea.Msg { return spinMsg{} })
+	// 100ms ~ 150ms 左右最為滑順
+	return tea.Tick(time.Millisecond*120, func(t time.Time) tea.Msg { return spinMsg{} })
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -132,16 +120,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinMsg:
 		m.step++
-		// 更新掃描指標位置
+		// 1. 更新掃描指標
 		if len(m.devices) > 0 {
 			m.scanIndex = m.step % len(m.devices)
 		}
-		return m, spinTick()
 
-	case tickMsg:
-		return m, m.pingAll()
+		// 2. 【核心改動】箭頭指到誰，就執行誰的 Ping
+		target := m.devices[m.scanIndex]
+		var pingCmd tea.Cmd
+		if target.Name != "---" {
+			target.Loading = true
+			pingCmd = runPing(m.scanIndex, target.IP)
+		}
+
+		// 3. 同步觸發下一次動畫與這一次的 Ping 任務
+		return m, tea.Batch(pingCmd, spinTick())
 
 	case pingRes:
+		// 接收非同步回傳
 		d := m.devices[msg.idx]
 		d.Loading = false
 		d.Snt++
@@ -154,8 +150,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.Loss++
 		}
 
+		// 歷史紀錄
 		d.History = append([]Heartbeat{{Char: char, Success: msg.success}}, d.History...)
-		if len(d.History) > 30 { // 增加歷史長度到 30 格
+		if len(d.History) > 30 {
 			d.History = d.History[:30]
 		}
 	}
@@ -165,18 +162,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	var s strings.Builder
 
-	// 1. 標題與旋轉木馬 (Wheel)
+	// 1. 標題與旋轉木馬
 	wheelChar := WHEEL[m.step%len(WHEEL)]
 	s.WriteString(fmt.Sprintf("\n %s %s  %s\n", titleStyle.Render("Dead Man"), wheelChar, dimStyle.Render("RTT Scale: "+strconv.Itoa(int(RTT_SCALE))+"ms")))
 
-	// 2. 表頭 (增加了箭頭空間的偏移)
+	// 2. 表頭
 	s.WriteString(fmt.Sprintf("\n    %-15s %-15s %5s %5s %5s %5s  %-20s\n",
 		"HOSTNAME", "ADDRESS", "LOSS", "RTT", "AVG", "SNT", "RESULT"))
 	s.WriteString(dimStyle.Render(" " + strings.Repeat("─", 85)) + "\n")
 
 	// 3. 設備目錄
 	for i, d := range m.devices {
-		// 掃描指示器邏輯
 		indicator := "  "
 		if i == m.scanIndex {
 			indicator = arrowStyle.Render("> ")
@@ -196,7 +192,6 @@ func (m model) View() string {
 			avg = d.TotalRTT / float64(d.Snt-d.Loss)
 		}
 
-		// 歷史紀錄渲染
 		var histStr strings.Builder
 		for _, h := range d.History {
 			if h.Success {
@@ -206,22 +201,19 @@ func (m model) View() string {
 			}
 		}
 
-		// 斷線加粗提醒
 		rowStyle := lipgloss.NewStyle()
 		if len(d.History) > 0 && !d.History[0].Success {
 			rowStyle = rowStyle.Bold(true).Foreground(lipgloss.Color("15"))
 		}
 
+		// 移除 Loading 🛰️ 的渲染邏輯或改為只有在當前掃描時顯示，讓畫面乾淨一點
 		line := fmt.Sprintf("%s %-15s %-15s %4d%% %5.0f %5.0f %5d  %s",
 			indicator, d.Name, d.IP, lossRate, d.LastRTT, avg, d.Snt, histStr.String())
 
-		if d.Loading && i == m.scanIndex {
-			line += " 🛰️"
-		}
 		s.WriteString(rowStyle.Render(line) + "\n")
 	}
 
-	s.WriteString("\n " + dimStyle.Render("Keys: (q)uit, (r)efresh stats | Scan Pulse active"))
+	s.WriteString("\n " + dimStyle.Render("Keys: (q)uit, (r)efresh stats | Scan-on-Pulse Mode"))
 	return s.String()
 }
 
@@ -236,6 +228,7 @@ func main() {
 		RTT_SCALE = cfg.Scale
 	}
 
+	// 建議開啟 WithAltScreen 讓 TUI 體驗更完整
 	p := tea.NewProgram(model{devices: cfg.Devices}, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v", err)
