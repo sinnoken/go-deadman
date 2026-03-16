@@ -67,7 +67,7 @@ type pingRes struct {
 
 func getResultChar(rtt float64, success bool) string {
 	if !success {
-		return "░"
+		return "·"
 	}
 	if rtt < RTT_SCALE*1 { return "▁" }
 	if rtt < RTT_SCALE*2 { return "▂" }
