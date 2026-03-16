@@ -5,7 +5,8 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-
+permissions:
+  contents: write # 必備：允許 Actions 建立 Release
 
 jobs:
   build:
@@ -19,7 +20,7 @@ jobs:
           - goos: windows
             goarch: amd64
           - goos: darwin
-            goarch: arm64 # 給 M1/M2 Mac 用
+            goarch: arm64
 
     steps:
       - name: Checkout Code
@@ -39,18 +40,16 @@ jobs:
 
       - name: Build Binary
         run: |
-          # 定義檔名
           BINARY_NAME=deadman-${{ matrix.goos }}-${{ matrix.goarch }}
           if [ "${{ matrix.goos }}" = "windows" ]; then
             BINARY_NAME=${BINARY_NAME}.exe
           fi
           
-          # 核心編譯：確保 tasks.yaml 存在於目錄中以便 embed
-          # 使用 -s -w 移除除錯資訊以瘦身
+          # 編譯瘦身
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
           go build -ldflags="-s -w" -o "$BINARY_NAME" .
 
-          # 針對 Windows x64 進行 UPX 壓縮
+          # Windows 壓縮
           if [ "${{ matrix.goos }}" = "windows" ] && [ "${{ matrix.goarch }}" = "amd64" ]; then
             sudo apt-get update && sudo apt-get install -y upx
             upx --best "$BINARY_NAME"
@@ -61,3 +60,27 @@ jobs:
         with:
           name: deadman-${{ matrix.goos }}-${{ matrix.goarch }}
           path: deadman-${{ matrix.goos }}-${{ matrix.goarch }}*
+
+  # --- 新增的 Release Job ---
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') # 只有在推送 Tag 時才執行發布
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          pattern: deadman-*
+          merge-multiple: true # 將所有子目錄的檔案合併到同一個資料夾
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./artifacts/* # 發布所有編譯出的檔案
+          generate_release_notes: true # 自動生成變更日誌
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
