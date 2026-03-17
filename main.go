@@ -137,16 +137,30 @@ func runPingTask(idx int, ip string) tea.Cmd {
 	return func() tea.Msg {
 		pinger, err := probing.NewPinger(ip)
 		if err == nil {
-			pinger.Count, pinger.Timeout = 1, time.Second
-			pinger.SetPrivileged(false)
+			pinger.Count = 1
+			pinger.Timeout = time.Second
+			
+			// 【關鍵修正】根據作業系統動態調整權限
+			if runtime.GOOS == "windows" {
+				pinger.SetPrivileged(true) // Windows 強制使用 Raw ICMP
+			} else {
+				pinger.SetPrivileged(false) // Mac/Linux 嘗試使用 Unprivileged
+			}
+
 			if err = pinger.Run(); err == nil {
 				stats := pinger.Statistics()
 				if stats.PacketsRecv > 0 {
-					return pingRes{idx: idx, rtt: float64(stats.MaxRtt.Microseconds()) / 1000.0, success: true, isNative: true}
+					return pingRes{
+						idx:      idx, 
+						rtt:      float64(stats.MaxRtt.Microseconds()) / 1000.0, 
+						success:  true, 
+						isNative: true, // 成功的話，畫面上會多一個 * 號
+					}
 				}
 			}
 		}
-		// Fallback
+
+		// Fallback (系統 Ping)
 		var cmd *exec.Cmd
 		if runtime.GOOS == "windows" {
 			cmd = exec.Command("ping", "-n", "1", "-w", "1000", ip)
@@ -155,7 +169,6 @@ func runPingTask(idx int, ip string) tea.Cmd {
 		}
 		out, _ := cmd.CombinedOutput()
 		
-		// [修正點] 呼叫更新後的 parseRTT，確實抓到時間才算成功
 		rtt, isSuccess := parseRTT(string(out))
 		return pingRes{idx: idx, rtt: rtt, success: isSuccess, isNative: false}
 	}
