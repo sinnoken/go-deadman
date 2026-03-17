@@ -12,7 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	probing "github.com/prometheus-community/pro-bing"
+	probing "github.com/prometheus-community/pro-bing" // [新增]
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,12 +20,12 @@ import (
 var embeddedYaml []byte
 
 const (
-	VERSION              = "v1.5.0"
+	VERSION              = "v1.6.0" // 更新版本號
 	HIST_SIZE            = 30
 	PING_INTERVAL        = 2
 	TICK_RATE_MS         = 120
 	TICKS_PER_PING       = (PING_INTERVAL * 1000) / TICK_RATE_MS
-	MAX_CONCURRENT_PINGS = 50 // [新增] 一次最多允許 50 個 ping 執行緒同時運作
+	MAX_CONCURRENT_PINGS = 50
 )
 
 var (
@@ -58,6 +58,7 @@ type Device struct {
 	HistoryIdx int
 	HistCount  int
 	Loading    bool
+	IsNative   bool // [新增] 用來標記目前是否使用 Native 模式
 }
 
 type Config struct {
@@ -72,15 +73,59 @@ type model struct {
 	height    int
 	offset    int
 	hostname  string
-	pingQueue []int // [新增] 存放正在排隊等待發送 Ping 的設備 Index
+	pingQueue []int
 }
 
-type startPingMsg struct{} // [新增] 觸發一輪全新 Ping 任務的訊號
+type startPingMsg struct{}
 type tickMsg time.Time
 type pingRes struct {
-	idx     int
-	rtt     float64
-	success bool
+	idx      int
+	rtt      float64
+	success  bool
+	isNative bool // [新增]
+}
+
+// ---------------------------------------------------------
+// 核心 Ping 邏輯：優先 Pro-bing，失敗則回歸 OS Ping
+// ---------------------------------------------------------
+
+func runPingTask(idx int, ip string) tea.Cmd {
+	return func() tea.Msg {
+		// 1. 嘗試使用 pro-bing (Native ICMP)
+		pinger, err := probing.NewPinger(ip)
+		if err == nil {
+			pinger.Count = 1
+			pinger.Timeout = time.Second
+			// Windows 下若非管理員，pro-bing 會自動嘗試用 UDP 模擬
+			pinger.SetPrivileged(false) 
+			
+			err = pinger.Run()
+			if err == nil {
+				stats := pinger.Statistics()
+				if stats.PacketsRecv > 0 {
+					rttMs := float64(stats.MaxRtt.Microseconds()) / 1000.0
+					return pingRes{idx: idx, rtt: rttMs, success: true, isNative: true}
+				}
+			}
+		}
+
+		// 2. 降級：使用系統原本的 Ping 指令
+		return runOSPing(idx, ip)
+	}
+}
+
+func runOSPing(idx int, ip string) pingRes {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("ping", "-n", "1", "-w", "1000", ip)
+	} else {
+		cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return pingRes{idx: idx, rtt: 0, success: false, isNative: false}
+	}
+	return pingRes{idx: idx, rtt: parsePingTime(string(out)), success: true, isNative: false}
 }
 
 func parsePingTime(out string) float64 {
@@ -98,56 +143,11 @@ func parsePingTime(out string) float64 {
 	return res
 }
 
-// runPingTask 現在包含自動降級邏輯
-func runPingTask(idx int, ip string) tea.Cmd {
-	return func() tea.Msg {
-		// 優先方案：使用 pro-bing (原生 ICMP/UDP)
-		pinger, err := probing.NewPinger(ip)
-		if err == nil {
-			pinger.Count = 1
-			pinger.Timeout = time.Second
-			// 在多數 OS 上，false 代表使用 UDP-based ICMP，不需要 root
-			pinger.SetPrivileged(false) 
-			
-			err = pinger.Run() // 執行 Ping
-			if err == nil {
-				stats := pinger.Statistics()
-				if stats.PacketsRecv > 0 {
-					// 成功：回傳微秒級精度轉為 float64 毫秒
-					rttMs := float64(stats.MaxRtt.Microseconds()) / 1000.0
-					return pingRes{idx: idx, rtt: rttMs, success: true}
-				}
-			}
-		}
-
-		// 降級方案：如果 pro-bing 失敗 (權限或 Socket 錯誤)，跳回 OS-Ping
-		return runOSPing(idx, ip)
-	}
-}
-
-// 原始的 OS Ping 邏輯抽離出來作為備援
-func runOSPing(idx int, ip string) tea.Msg {
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("ping", "-n", "1", "-w", "1000", ip)
-	} else {
-		cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
-	}
-	
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return pingRes{idx: idx, rtt: 0, success: false}
-	}
-	
-	rtt := parsePingTime(string(out))
-	if rtt == 0 && !strings.Contains(strings.ToLower(string(out)), "ms") {
-		return pingRes{idx: idx, rtt: 0, success: false}
-	}
-	return pingRes{idx: idx, rtt: rtt, success: true}
-}
+// ---------------------------------------------------------
+// Bubbletea Model 邏輯 (Update/View 保持相容並微調)
+// ---------------------------------------------------------
 
 func (m model) Init() tea.Cmd {
-	// 程式啟動時，同時啟動時鐘動畫，並發送第一次的全體 Ping 訊號
 	return tea.Batch(func() tea.Msg { return startPingMsg{} }, animationTick())
 }
 
@@ -159,7 +159,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c": return m, tea.Quit
@@ -169,49 +168,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d.HistoryIdx, d.HistCount = 0, 0
 			}
 		}
-
 	case startPingMsg:
-		// [新增邏輯] 開始新的一輪：把所有設備放進排隊佇列
 		m.pingQueue = make([]int, 0, len(m.devices))
 		var cmds []tea.Cmd
-
 		for i, d := range m.devices {
 			if d.Name != "---" {
-				d.Loading = true // 點亮所有的 > 指標
+				d.Loading = true
 				m.pingQueue = append(m.pingQueue, i)
 			}
 		}
-
-		// 決定第一批要發送的數量 (最多 MAX_CONCURRENT_PINGS)
 		batchSize := MAX_CONCURRENT_PINGS
-		if len(m.pingQueue) < batchSize {
-			batchSize = len(m.pingQueue)
-		}
-
-		// 發出第一批
+		if len(m.pingQueue) < batchSize { batchSize = len(m.pingQueue) }
 		for i := 0; i < batchSize; i++ {
 			idx := m.pingQueue[i]
 			cmds = append(cmds, runPingTask(idx, m.devices[idx].IP))
 		}
-
-		// 將已經發出的任務從 Queue 中移除
 		m.pingQueue = m.pingQueue[batchSize:]
 		return m, tea.Batch(cmds...)
 
 	case tickMsg:
 		m.step++
 		if m.step%TICKS_PER_PING == 0 {
-			// 時間到，發送 startPingMsg 來啟動新的一輪
 			return m, tea.Batch(func() tea.Msg { return startPingMsg{} }, animationTick())
 		}
 		return m, animationTick()
 
 	case pingRes:
-		// 1. 處理回傳的數據 (與原本相同)
 		d := m.devices[msg.idx]
-		d.Loading = false // 收到回應，熄滅 > 指標
+		d.Loading = false
+		d.IsNative = msg.isNative // 更新測量模式狀態
 		d.Snt++
-		if msg.success {
+		if msg.success && msg.rtt > 0 {
 			d.LastRTT = msg.rtt
 			d.TotalRTT += msg.rtt
 			d.AvgRTT = d.TotalRTT / float64(d.Snt-d.Loss)
@@ -223,24 +210,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		d.HistoryIdx = (d.HistoryIdx + 1) % HIST_SIZE
 		if d.HistCount < HIST_SIZE { d.HistCount++ }
 
-		// 2. [新增邏輯] 滑動視窗：完成了一個任務，看看 Queue 裡還有沒有排隊的？
 		var nextCmd tea.Cmd
 		if len(m.pingQueue) > 0 {
 			nextIdx := m.pingQueue[0]
-			m.pingQueue = m.pingQueue[1:] // 隊列往前推進
+			m.pingQueue = m.pingQueue[1:]
 			nextCmd = runPingTask(nextIdx, m.devices[nextIdx].IP)
 		}
-
-		// 如果有抽到新任務，就把它加到 Bubbletea 的事件迴圈裡
-		if nextCmd != nil {
-			return m, nextCmd
-		}
+		return m, nextCmd
 	}
 	return m, nil
 }
 
 func getResultChar(rtt float64, success bool) string {
-	if !success { return "·" }
+	if !success || rtt == 0 { return "·" }
 	scales := []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇"}
 	for i, char := range scales {
 		if rtt < RTT_SCALE*float64(i+1) { return char }
@@ -251,17 +233,14 @@ func getResultChar(rtt float64, success bool) string {
 func (m model) View() string {
 	if m.height == 0 { return " Initializing..." }
 	var s strings.Builder
-
 	wheelChar := WHEEL[m.step%len(WHEEL)]
 	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render(fmt.Sprintf("dead man %s", wheelChar))) + "\n")
 	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Right, dimStyle.Render(fmt.Sprintf("From: %s [%s]", m.hostname, VERSION))) + "\n")
-
 	headerLine := fmt.Sprintf("\n    %-15s %-15s %5s %5s %5s %5s  %-20s", "HOSTNAME", "ADDRESS", "LOSS", "RTT", "AVG", "SNT", "RESULT")
 	s.WriteString(headerStyle.Render(headerLine) + "\n")
 	s.WriteString(dimStyle.Render(" "+strings.Repeat("─", 85)) + "\n")
 
-	headerHeight, footerHeight := 6, 2
-	visibleHeight := m.height - headerHeight - footerHeight
+	visibleHeight := m.height - 8
 	if visibleHeight < 1 { visibleHeight = 1 }
 	endIndex := m.offset + visibleHeight
 	if endIndex > len(m.devices) { endIndex = len(m.devices) }
@@ -272,11 +251,8 @@ func (m model) View() string {
 			s.WriteString("  " + dimStyle.Render(strings.Repeat("-", 80)) + "\n")
 			continue
 		}
-
 		indicator := "  "
-		if d.Loading {
-			indicator = arrowStyle.Render("> ")
-		}
+		if d.Loading { indicator = arrowStyle.Render("> ") }
 
 		var histStr strings.Builder
 		for j := 1; j <= d.HistCount; j++ {
@@ -286,24 +262,19 @@ func (m model) View() string {
 		}
 
 		isDown := d.HistCount > 0 && !d.History[(d.HistoryIdx-1+HIST_SIZE)%HIST_SIZE].Success
-		infoText := fmt.Sprintf(" %-15s %-15s %4d%% %5.1f %5.1f %5d  ",
-			d.Name, d.IP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt)
+		modeTag := " "
+		if d.IsNative { modeTag = "*" } // 用星號標記原生模式，增加區別度
+		
+		infoText := fmt.Sprintf("%-15s %-15s %4d%% %5.1f %5.1f %5d%s ",
+			d.Name, d.IP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt, modeTag)
 
 		s.WriteString(indicator)
-		if isDown {
-			s.WriteString(failRowStyle.Render(infoText))
-		} else {
-			s.WriteString(infoText)
-		}
+		if isDown { s.WriteString(failRowStyle.Render(infoText)) } else { s.WriteString(infoText) }
 		s.WriteString(histStr.String() + "\n")
 	}
 
-	if rendered := endIndex - m.offset; rendered < visibleHeight {
-		s.WriteString(strings.Repeat("\n", visibleHeight-rendered))
-	}
-	footer := fmt.Sprintf(" RTT Scale: %.0fms | Total: %d | Interval: %ds | q: quit", RTT_SCALE, len(m.devices), PING_INTERVAL)
+	footer := fmt.Sprintf(" RTT Scale: %.0fms | Total: %d | *: Native Mode | q: quit", RTT_SCALE, len(m.devices))
 	s.WriteString("\n " + dimStyle.Render(footer))
-
 	return s.String()
 }
 
