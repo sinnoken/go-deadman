@@ -17,16 +17,20 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # 新增一個 config 維度，代表你要編譯的版本
-        config: [tasks ] 
-        # 原本的系統架構保留在 include 內
-        include:
-          - goos: linux
-            goarch: amd64
+        # 第一維度：版本
+        config: [a, b] 
+        # 第二維度：作業系統
+        goos: [linux, windows, darwin]
+        # 第三維度：架構
+        goarch: [amd64, arm64]
+        # 排除不想要的組合 (例如 windows 不需要 arm64)
+        exclude:
           - goos: windows
-            goarch: amd64
-          - goos: darwin
             goarch: arm64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
 
     steps:
       - name: Checkout Code
