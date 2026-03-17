@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -19,22 +18,24 @@ import (
 //go:embed config.yaml
 var embeddedYaml []byte
 
-const VERSION = "v1.1.1"
-
-// 用於解析 ping 輸出的時間 (支援 Windows/Linux/macOS)
-var timeRegex = regexp.MustCompile(`(?:time|時間)[=<]([0-9.]+) ?ms`)
+const (
+	VERSION        = "v1.3.0"
+	HIST_SIZE      = 30  // 固定歷史紀錄長度
+	PING_INTERVAL  = 2   // 每 2 秒全體 Ping 一次
+	TICK_RATE_MS   = 120 // 動畫更新頻率 (毫秒)
+	TICKS_PER_PING = (PING_INTERVAL * 1000) / TICK_RATE_MS // 預先算好觸發 Ping 的 Tick 數
+)
 
 // --- 樣式定義 ---
 var (
-	RTT_SCALE = 10.0
-	WHEEL     = []string{"|", "/", "-", "\\"}
-
-	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
-	headerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
-	upStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	downStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	arrowStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
+	RTT_SCALE    = 10.0
+	WHEEL        = []string{"|", "/", "-", "\\"}
+	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
+	headerStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
+	upStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	downStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	arrowStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
 	failRowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
 )
 
@@ -50,7 +51,14 @@ type Device struct {
 	Snt      int
 	TotalRTT float64
 	LastRTT  float64
-	History  []Heartbeat
+	AvgRTT   float64 // 預運算
+	LossRate int     // 預運算
+
+	// [終極優化 1] 真正的 Ring Buffer：零記憶體分配 (Zero Allocation)
+	History    [HIST_SIZE]Heartbeat // 固定長度陣列
+	HistoryIdx int                  // 下一次寫入的索引
+	HistCount  int                  // 目前已存的紀錄數量 (上限 HIST_SIZE)
+	
 	Loading  bool
 }
 
@@ -62,41 +70,45 @@ type Config struct {
 type model struct {
 	devices   []*Device
 	step      int
-	scanIndex int
 	width     int
 	height    int
 	offset    int
 	hostname  string
 }
 
-type spinMsg struct{}
+type tickMsg time.Time
 type pingRes struct {
 	idx     int
 	rtt     float64
 	success bool
 }
 
-func getResultChar(rtt float64, success bool) string {
-	if !success { return "·" }
-	if rtt < RTT_SCALE*1 { return "▁" }
-	if rtt < RTT_SCALE*2 { return "▂" }
-	if rtt < RTT_SCALE*3 { return "▃" }
-	if rtt < RTT_SCALE*4 { return "▄" }
-	if rtt < RTT_SCALE*5 { return "▅" }
-	if rtt < RTT_SCALE*6 { return "▆" }
-	if rtt < RTT_SCALE*7 { return "▇" }
-	return "█"
+// 捨棄正則表達式，改用字串處理
+func parsePingTime(out string) float64 {
+	key := "time="
+	if runtime.GOOS == "windows" {
+		key = "時間="
+		if !strings.Contains(out, key) { key = "time=" }
+	}
+
+	start := strings.Index(out, key)
+	if start == -1 { return 0 }
+	
+	sub := out[start+len(key):]
+	end := strings.Index(sub, "ms")
+	if end == -1 { return 0 }
+	
+	res, _ := strconv.ParseFloat(strings.TrimSpace(sub[:end]), 64)
+	return res
 }
 
-// 修正後的精準 Ping 計算方式
-func runPing(idx int, ip string) tea.Cmd {
+// 單一 Ping 任務
+func runPingTask(idx int, ip string) tea.Cmd {
 	return func() tea.Msg {
 		var cmd *exec.Cmd
 		if runtime.GOOS == "windows" {
-			// -n 1: 只發一個包, -w 1000: 等待 1000ms
 			cmd = exec.Command("ping", "-n", "1", "-w", "1000", ip)
 		} else {
-			// -c 1: 只發一個包, -W 1: 等待 1秒
 			cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
 		}
 
@@ -104,145 +116,151 @@ func runPing(idx int, ip string) tea.Cmd {
 		if err != nil {
 			return pingRes{idx: idx, rtt: 0, success: false}
 		}
-
-		// 解析輸出字串中的 time=XXms
-		matches := timeRegex.FindStringSubmatch(string(out))
-		var rtt float64
-		if len(matches) > 1 {
-			// 抓取的是系統 ping 指令測得的精準網路往返時間
-			rtt, _ = strconv.ParseFloat(matches[1], 64)
-		} else {
-			// 預防萬一：解析不到則設為 0
-			rtt = 0
-		}
-
-		return pingRes{idx: idx, rtt: rtt, success: true}
+		return pingRes{idx: idx, rtt: parsePingTime(string(out)), success: true}
 	}
 }
 
-func (m model) Init() tea.Cmd {
-	return spinTick()
+// 併發發送所有設備的 Ping 指令
+func pingAll(devices []*Device) tea.Cmd {
+	var cmds []tea.Cmd
+	for i, d := range devices {
+		if d.Name != "---" {
+			d.Loading = true
+			cmds = append(cmds, runPingTask(i, d.IP))
+		}
+	}
+	return tea.Batch(cmds...)
 }
 
-func spinTick() tea.Cmd {
-	return tea.Tick(time.Millisecond*120, func(t time.Time) tea.Msg { return spinMsg{} })
+func (m model) Init() tea.Cmd {
+	return tea.Batch(pingAll(m.devices), animationTick())
+}
+
+func animationTick() tea.Cmd {
+	return tea.Tick(time.Millisecond*time.Duration(TICK_RATE_MS), func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		m.width, m.height = msg.Width, msg.Height
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "ctrl+c":
-			return m, tea.Quit
+		case "q", "ctrl+c": return m, tea.Quit
 		case "r":
 			for _, d := range m.devices {
-				d.History = nil
-				d.Snt, d.Loss, d.TotalRTT = 0, 0, 0
+				d.Snt, d.Loss, d.TotalRTT, d.LastRTT, d.AvgRTT, d.LossRate = 0, 0, 0, 0, 0, 0
+				d.HistoryIdx, d.HistCount = 0, 0 // 重置 Ring Buffer 狀態
 			}
 		}
 
-	case spinMsg:
+	case tickMsg:
 		m.step++
-		if len(m.devices) > 0 {
-			m.scanIndex = m.step % len(m.devices)
-			visibleLines := m.height - 8
-			if visibleLines < 1 { visibleLines = 1 }
-			if m.scanIndex >= m.offset+visibleLines { m.offset = m.scanIndex - visibleLines + 1 }
-			if m.scanIndex < m.offset { m.offset = m.scanIndex }
+		// 使用預先算好的常數，避免每次 Tick 做運算
+		if m.step % TICKS_PER_PING == 0 { 
+			return m, tea.Batch(pingAll(m.devices), animationTick())
 		}
-
-		target := m.devices[m.scanIndex]
-		var pingCmd tea.Cmd
-		if target.Name != "---" {
-			target.Loading = true
-			pingCmd = runPing(m.scanIndex, target.IP)
-		}
-		return m, tea.Batch(pingCmd, spinTick())
+		return m, animationTick()
 
 	case pingRes:
 		d := m.devices[msg.idx]
 		d.Loading = false
 		d.Snt++
-		char := getResultChar(msg.rtt, msg.success)
 		if msg.success {
 			d.LastRTT = msg.rtt
 			d.TotalRTT += msg.rtt
+			d.AvgRTT = d.TotalRTT / float64(d.Snt - d.Loss)
 		} else {
 			d.Loss++
 		}
-		d.History = append([]Heartbeat{{Char: char, Success: msg.success}}, d.History...)
-		if len(d.History) > 30 { d.History = d.History[:30] }
+		d.LossRate = (d.Loss * 100) / d.Snt
+
+		// [終極優化 1] 寫入 Ring Buffer，無任何記憶體分配
+		char := getResultChar(msg.rtt, msg.success)
+		d.History[d.HistoryIdx] = Heartbeat{Char: char, Success: msg.success}
+		d.HistoryIdx = (d.HistoryIdx + 1) % HIST_SIZE
+		if d.HistCount < HIST_SIZE {
+			d.HistCount++
+		}
 	}
 	return m, nil
 }
 
+func getResultChar(rtt float64, success bool) string {
+	if !success { return "·" }
+	scales := []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇"}
+	for i, char := range scales {
+		if rtt < RTT_SCALE*float64(i+1) { return char }
+	}
+	return "█"
+}
+
 func (m model) View() string {
 	if m.height == 0 { return " Initializing..." }
-
 	var s strings.Builder
 
-	// 1. 標題與來源 (置中與靠右)
 	wheelChar := WHEEL[m.step%len(WHEEL)]
-	titleText := strings.ToLower(fmt.Sprintf("dead man %s", wheelChar))
-	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render(titleText)) + "\n")
-	
-	fromInfo := fmt.Sprintf("From: %s [%s]", m.hostname, VERSION)
-	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Right, dimStyle.Render(fromInfo)) + "\n")
+	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render(fmt.Sprintf("dead man %s", wheelChar))) + "\n")
+	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Right, dimStyle.Render(fmt.Sprintf("From: %s [%s]", m.hostname, VERSION))) + "\n")
 
-	// 2. 表頭 (橘色)
-	headerLine := fmt.Sprintf("\n    %-15s %-15s %5s %5s %5s %5s  %-20s",
-		"HOSTNAME", "ADDRESS", "LOSS", "RTT", "AVG", "SNT", "RESULT")
+	headerLine := fmt.Sprintf("\n    %-15s %-15s %5s %5s %5s %5s  %-20s", "HOSTNAME", "ADDRESS", "LOSS", "RTT", "AVG", "SNT", "RESULT")
 	s.WriteString(headerStyle.Render(headerLine) + "\n")
 	s.WriteString(dimStyle.Render(" "+strings.Repeat("─", 85)) + "\n")
 
-	// 3. 渲染區間
 	headerHeight, footerHeight := 6, 2
 	visibleHeight := m.height - headerHeight - footerHeight
-	if visibleHeight < 0 { visibleHeight = 0 }
+	if visibleHeight < 1 { visibleHeight = 1 }
+	
 	endIndex := m.offset + visibleHeight
 	if endIndex > len(m.devices) { endIndex = len(m.devices) }
 
-	// 4. 設備渲染 (支援小數點顯示)
 	for i := m.offset; i < endIndex; i++ {
 		d := m.devices[i]
-		indicator := "  "
-		if i == m.scanIndex { indicator = arrowStyle.Render("> ") }
-
 		if d.Name == "---" {
-			s.WriteString(fmt.Sprintf("%s%s\n", indicator, dimStyle.Render(strings.Repeat("-", 80))))
+			s.WriteString("  " + dimStyle.Render(strings.Repeat("-", 80)) + "\n")
 			continue
 		}
 
-		lossRate := 0
-		if d.Snt > 0 { lossRate = (d.Loss * 100) / d.Snt }
-		avg := 0.0
-		if d.Snt-d.Loss > 0 { avg = d.TotalRTT / float64(d.Snt-d.Loss) }
-
 		var histStr strings.Builder
-		for _, h := range d.History {
-			if h.Success { histStr.WriteString(upStyle.Render(h.Char)) } else { histStr.WriteString(downStyle.Render(h.Char)) }
+		
+		// [終極優化 1] 反向讀取 Ring Buffer (從最新的一筆開始往回讀)
+		for j := 1; j <= d.HistCount; j++ {
+			idx := (d.HistoryIdx - j + HIST_SIZE) % HIST_SIZE
+			h := d.History[idx]
+			if h.Success {
+				histStr.WriteString(upStyle.Render(h.Char))
+			} else {
+				histStr.WriteString(downStyle.Render(h.Char))
+			}
 		}
 
-		isDown := len(d.History) > 0 && !d.History[0].Success
-		// 這裡將 %5.0f 改為 %5.1f 以顯示小數點
-		rowText := fmt.Sprintf("%s %-15s %-15s %4d%% %5.1f %5.1f %5d  %s",
-			indicator, d.Name, d.IP, lossRate, d.LastRTT, avg, d.Snt, histStr.String())
+		// 判斷最新的一筆是否失敗
+		isDown := false
+		if d.HistCount > 0 {
+			lastIdx := (d.HistoryIdx - 1 + HIST_SIZE) % HIST_SIZE
+			isDown = !d.History[lastIdx].Success
+		}
+
+		// [終極優化 2] 渲染分離：避免 lipgloss 重複解析顏色代碼
+		infoText := fmt.Sprintf("   %-15s %-15s %4d%% %5.1f %5.1f %5d  ",
+			d.Name, d.IP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt)
 
 		if isDown {
-			s.WriteString(failRowStyle.Render(rowText) + "\n")
+			s.WriteString(failRowStyle.Render(infoText))
 		} else {
-			s.WriteString(rowText + "\n")
+			s.WriteString(infoText)
 		}
+		
+		// 歷史紀錄已經上好色了，直接接在後面，不包進 failRowStyle 裡
+		s.WriteString(histStr.String() + "\n")
 	}
 
-	renderedLines := endIndex - m.offset
-	if renderedLines < visibleHeight { s.WriteString(strings.Repeat("\n", visibleHeight-renderedLines)) }
+	if rendered := endIndex - m.offset; rendered < visibleHeight {
+		s.WriteString(strings.Repeat("\n", visibleHeight-rendered))
+	}
 	
-	footer := fmt.Sprintf(" RTT Scale: %.0fms | Total: %d | q: quit", RTT_SCALE, len(m.devices))
+	footer := fmt.Sprintf(" RTT Scale: %.0fms | Total: %d | Interval: %ds | q: quit", RTT_SCALE, len(m.devices), PING_INTERVAL)
 	s.WriteString("\n " + dimStyle.Render(footer))
 
 	return s.String()
