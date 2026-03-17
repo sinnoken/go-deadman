@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        config: [tasks ]
         include:
           - goos: linux
             goarch: amd64
@@ -40,6 +41,14 @@ jobs:
             go mod init go-deadman
           fi
           go mod tidy
+      
+      # --- 新增步驟：處理設定檔 ---
+      - name: Prepare Configuration
+        run: |
+          # 假設你的 Go 程式固定讀取 config.yaml，
+          # 我們可以在編譯前，把 a.yaml 或 b.yaml 複製並重新命名為 config.yaml
+          # 讓 go:embed 或執行時可以抓到正確的檔案
+          cp ${{ matrix.config }}.yaml config.yaml
 
       - name: Build Binary
         run: |
