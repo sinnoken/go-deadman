@@ -179,7 +179,7 @@ func (m model) View() string {
 	// 1. 標題區
 	wheelChar := WHEEL[m.step%len(WHEEL)]
 	s.WriteString(fmt.Sprintf("\n %s %s  %s\n", 
-		titleStyle.Render("Dead Man"), 
+		titleStyle.Render("go-deadman"), 
 		wheelChar, 
 		dimStyle.Render("RTT Scale: "+strconv.Itoa(int(RTT_SCALE))+"ms")))
 
