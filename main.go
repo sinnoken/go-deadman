@@ -162,17 +162,39 @@ func runPingTask(idx int, ip string) tea.Cmd {
 }
 
 // [修正點] 回傳 (float64, bool) 確保能分辨真的抓到時間還是字串亂碼/逾時
+// [終極修正版] 支援多語系與 <1ms 的極端情況
 func parseRTT(out string) (float64, bool) {
-	key := "time="
-	if runtime.GOOS == "windows" { key = "時間=" }
-	start := strings.Index(out, key)
-	if start == -1 { return 0, false }
-	sub := out[start+len(key):]
+	// 涵蓋英文版、中文版，以及小於 1ms 的情況
+	keys := []string{"time=", "time<", "時間=", "時間<"}
+	var start int = -1
+	var matchKey string
+
+	// 找出到底中了哪一個關鍵字
+	for _, k := range keys {
+		start = strings.Index(out, k)
+		if start != -1 {
+			matchKey = k
+			break
+		}
+	}
+
+	if start == -1 {
+		return 0, false // 真的找不到時間，代表超時或斷線
+	}
+
+	// 擷取關鍵字後面的字串
+	sub := out[start+len(matchKey):]
 	end := strings.Index(sub, "ms")
-	if end == -1 { return 0, false }
-	
-	res, err := strconv.ParseFloat(strings.TrimSpace(sub[:end]), 64)
-	if err != nil { return 0, false }
+	if end == -1 {
+		return 0, false
+	}
+
+	// 轉換為浮點數 (如果是 time<1ms，這裡會切出 "1"，也能順利轉型)
+	timeStr := strings.TrimSpace(sub[:end])
+	res, err := strconv.ParseFloat(timeStr, 64)
+	if err != nil {
+		return 0, false
+	}
 	return res, true
 }
 
