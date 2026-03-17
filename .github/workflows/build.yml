@@ -18,7 +18,7 @@ jobs:
     strategy:
       matrix:
         # 新增一個 config 維度，代表你要編譯的版本
-        config: [a, b] 
+        config: [tasks ] 
         # 原本的系統架構保留在 include 內
         include:
           - goos: linux
