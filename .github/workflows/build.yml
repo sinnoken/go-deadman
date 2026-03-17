@@ -17,7 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        config: [tasks ]
+        # 新增一個 config 維度，代表你要編譯的版本
+        config: [a, b] 
+        # 原本的系統架構保留在 include 內
         include:
           - goos: linux
             goarch: amd64
