@@ -299,31 +299,32 @@ func (m model) View() string {
     }
     var s strings.Builder
     
-    // --- 修改部分開始 ---
-    // 1. 第一行：簡潔的主標題
+    // 1. 標題與副標題
     s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render("NETWORK MONITOR")) + "\n")
-
-    // 2. 第二行：From 來源、程式版號、Log+Avg 圖表說明
     subTitle := fmt.Sprintf("From: %s | Version: %s | 顯示: Log+Avg 圖表", m.hostname, VERSION)
-    // 這裡使用 dimStyle 讓副標題顏色稍微柔和一點，也可以依據喜好換成其他 Style
     s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, dimStyle.Render(subTitle)) + "\n")
 
-    // 3. 原本的資料欄位表頭
-    header := fmt.Sprintf("\n    %-15s %-15s %5s %7s %7s %5s  %-20s", "HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "SNT", "LOG-STATUS")
+    // 2. 表頭【對齊修正】：
+    // 最前面加上 2 個空白，用來對齊下方資料列的指示器 ("> " 或 "  ")
+    // SNT 欄位設為 %6s，剛好對齊底下的次數 + 星號 (如 "   12*")
+    header := fmt.Sprintf("\n  %-15s %-15s %5s %7s %7s %6s  %-20s", "HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "SNT", "LOG-STATUS")
     s.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(strings.Repeat("─", 85)) + "\n")
-    // --- 修改部分結束 ---
 
     for _, d := range m.devices {
         if d.Name == "---" {
             s.WriteString(dimStyle.Render("  " + strings.Repeat("-", 80)) + "\n")
             continue
         }
+        
+        // 資料列的指示器 (佔 2 個字元，這就是為什麼表頭前面要加 2 個空白)
         indicator := "  "
         if d.Loading {
             indicator = arrowStyle.Render("> ")
         }
 
         var hist strings.Builder
+        // 3. 圖表【維持最新在左邊】：
+        // 從 j=1 開始往回抓，確保最新的一筆印在最左側
         for j := 1; j <= d.HistCount; j++ {
             h := d.History[(d.HistoryIdx-j+HIST_SIZE)%HIST_SIZE]
             if h.Success {
@@ -338,8 +339,11 @@ func (m model) View() string {
             tag = "*"
         }
         
-        // 對齊更新後的寬度格式
-        line := fmt.Sprintf("%-15s %-15s %4d%% %7.1f %7.1f %5d%s ", d.Name, d.IP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt, tag)
+        // 4. 資料列【對齊修正】：
+        // %4d%% (5字元) 對齊 %5s
+        // %7.1f (7字元) 對齊 %7s
+        // %5d%s (6字元) 對齊 %6s
+        line := fmt.Sprintf("%-15s %-15s %4d%% %7.1f %7.1f %5d%s  ", d.Name, d.IP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt, tag)
 
         s.WriteString(indicator)
         if d.HistCount > 0 && !d.History[(d.HistoryIdx-1+HIST_SIZE)%HIST_SIZE].Success {
