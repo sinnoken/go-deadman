@@ -19,14 +19,14 @@ import (
 var embeddedYaml []byte
 
 const (
-	VERSION        = "v1.3.0"
-	HIST_SIZE      = 30  // 固定歷史紀錄長度
-	PING_INTERVAL  = 2   // 每 2 秒全體 Ping 一次
-	TICK_RATE_MS   = 120 // 動畫更新頻率 (毫秒)
-	TICKS_PER_PING = (PING_INTERVAL * 1000) / TICK_RATE_MS // 預先算好觸發 Ping 的 Tick 數
+	VERSION              = "v1.5.0"
+	HIST_SIZE            = 30
+	PING_INTERVAL        = 2
+	TICK_RATE_MS         = 120
+	TICKS_PER_PING       = (PING_INTERVAL * 1000) / TICK_RATE_MS
+	MAX_CONCURRENT_PINGS = 50 // [新增] 一次最多允許 50 個 ping 執行緒同時運作
 )
 
-// --- 樣式定義 ---
 var (
 	RTT_SCALE    = 10.0
 	WHEEL        = []string{"|", "/", "-", "\\"}
@@ -45,21 +45,18 @@ type Heartbeat struct {
 }
 
 type Device struct {
-	Name     string `yaml:"name"`
-	IP       string `yaml:"ip"`
-	Loss     int
-	Snt      int
-	TotalRTT float64
-	LastRTT  float64
-	AvgRTT   float64 // 預運算
-	LossRate int     // 預運算
-
-	// [終極優化 1] 真正的 Ring Buffer：零記憶體分配 (Zero Allocation)
-	History    [HIST_SIZE]Heartbeat // 固定長度陣列
-	HistoryIdx int                  // 下一次寫入的索引
-	HistCount  int                  // 目前已存的紀錄數量 (上限 HIST_SIZE)
-	
-	Loading  bool
+	Name       string `yaml:"name"`
+	IP         string `yaml:"ip"`
+	Loss       int
+	Snt        int
+	TotalRTT   float64
+	LastRTT    float64
+	AvgRTT     float64
+	LossRate   int
+	History    [HIST_SIZE]Heartbeat
+	HistoryIdx int
+	HistCount  int
+	Loading    bool
 }
 
 type Config struct {
@@ -74,8 +71,10 @@ type model struct {
 	height    int
 	offset    int
 	hostname  string
+	pingQueue []int // [新增] 存放正在排隊等待發送 Ping 的設備 Index
 }
 
+type startPingMsg struct{} // [新增] 觸發一輪全新 Ping 任務的訊號
 type tickMsg time.Time
 type pingRes struct {
 	idx     int
@@ -83,26 +82,21 @@ type pingRes struct {
 	success bool
 }
 
-// 捨棄正則表達式，改用字串處理
 func parsePingTime(out string) float64 {
 	key := "time="
 	if runtime.GOOS == "windows" {
 		key = "時間="
 		if !strings.Contains(out, key) { key = "time=" }
 	}
-
 	start := strings.Index(out, key)
 	if start == -1 { return 0 }
-	
 	sub := out[start+len(key):]
 	end := strings.Index(sub, "ms")
 	if end == -1 { return 0 }
-	
 	res, _ := strconv.ParseFloat(strings.TrimSpace(sub[:end]), 64)
 	return res
 }
 
-// 單一 Ping 任務
 func runPingTask(idx int, ip string) tea.Cmd {
 	return func() tea.Msg {
 		var cmd *exec.Cmd
@@ -111,7 +105,6 @@ func runPingTask(idx int, ip string) tea.Cmd {
 		} else {
 			cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
 		}
-
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return pingRes{idx: idx, rtt: 0, success: false}
@@ -120,24 +113,13 @@ func runPingTask(idx int, ip string) tea.Cmd {
 	}
 }
 
-// 併發發送所有設備的 Ping 指令
-func pingAll(devices []*Device) tea.Cmd {
-	var cmds []tea.Cmd
-	for i, d := range devices {
-		if d.Name != "---" {
-			d.Loading = true
-			cmds = append(cmds, runPingTask(i, d.IP))
-		}
-	}
-	return tea.Batch(cmds...)
-}
-
 func (m model) Init() tea.Cmd {
-	return tea.Batch(pingAll(m.devices), animationTick())
+	// 程式啟動時，同時啟動時鐘動畫，並發送第一次的全體 Ping 訊號
+	return tea.Batch(func() tea.Msg { return startPingMsg{} }, animationTick())
 }
 
 func animationTick() tea.Cmd {
-	return tea.Tick(time.Millisecond*time.Duration(TICK_RATE_MS), func(t time.Time) tea.Msg { return tickMsg(t) })
+	return tea.Tick(time.Millisecond*TICK_RATE_MS, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -151,37 +133,74 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			for _, d := range m.devices {
 				d.Snt, d.Loss, d.TotalRTT, d.LastRTT, d.AvgRTT, d.LossRate = 0, 0, 0, 0, 0, 0
-				d.HistoryIdx, d.HistCount = 0, 0 // 重置 Ring Buffer 狀態
+				d.HistoryIdx, d.HistCount = 0, 0
 			}
 		}
 
+	case startPingMsg:
+		// [新增邏輯] 開始新的一輪：把所有設備放進排隊佇列
+		m.pingQueue = make([]int, 0, len(m.devices))
+		var cmds []tea.Cmd
+
+		for i, d := range m.devices {
+			if d.Name != "---" {
+				d.Loading = true // 點亮所有的 > 指標
+				m.pingQueue = append(m.pingQueue, i)
+			}
+		}
+
+		// 決定第一批要發送的數量 (最多 MAX_CONCURRENT_PINGS)
+		batchSize := MAX_CONCURRENT_PINGS
+		if len(m.pingQueue) < batchSize {
+			batchSize = len(m.pingQueue)
+		}
+
+		// 發出第一批
+		for i := 0; i < batchSize; i++ {
+			idx := m.pingQueue[i]
+			cmds = append(cmds, runPingTask(idx, m.devices[idx].IP))
+		}
+
+		// 將已經發出的任務從 Queue 中移除
+		m.pingQueue = m.pingQueue[batchSize:]
+		return m, tea.Batch(cmds...)
+
 	case tickMsg:
 		m.step++
-		// 使用預先算好的常數，避免每次 Tick 做運算
-		if m.step % TICKS_PER_PING == 0 { 
-			return m, tea.Batch(pingAll(m.devices), animationTick())
+		if m.step%TICKS_PER_PING == 0 {
+			// 時間到，發送 startPingMsg 來啟動新的一輪
+			return m, tea.Batch(func() tea.Msg { return startPingMsg{} }, animationTick())
 		}
 		return m, animationTick()
 
 	case pingRes:
+		// 1. 處理回傳的數據 (與原本相同)
 		d := m.devices[msg.idx]
-		d.Loading = false
+		d.Loading = false // 收到回應，熄滅 > 指標
 		d.Snt++
 		if msg.success {
 			d.LastRTT = msg.rtt
 			d.TotalRTT += msg.rtt
-			d.AvgRTT = d.TotalRTT / float64(d.Snt - d.Loss)
+			d.AvgRTT = d.TotalRTT / float64(d.Snt-d.Loss)
 		} else {
 			d.Loss++
 		}
 		d.LossRate = (d.Loss * 100) / d.Snt
-
-		// [終極優化 1] 寫入 Ring Buffer，無任何記憶體分配
-		char := getResultChar(msg.rtt, msg.success)
-		d.History[d.HistoryIdx] = Heartbeat{Char: char, Success: msg.success}
+		d.History[d.HistoryIdx] = Heartbeat{Char: getResultChar(msg.rtt, msg.success), Success: msg.success}
 		d.HistoryIdx = (d.HistoryIdx + 1) % HIST_SIZE
-		if d.HistCount < HIST_SIZE {
-			d.HistCount++
+		if d.HistCount < HIST_SIZE { d.HistCount++ }
+
+		// 2. [新增邏輯] 滑動視窗：完成了一個任務，看看 Queue 裡還有沒有排隊的？
+		var nextCmd tea.Cmd
+		if len(m.pingQueue) > 0 {
+			nextIdx := m.pingQueue[0]
+			m.pingQueue = m.pingQueue[1:] // 隊列往前推進
+			nextCmd = runPingTask(nextIdx, m.devices[nextIdx].IP)
+		}
+
+		// 如果有抽到新任務，就把它加到 Bubbletea 的事件迴圈裡
+		if nextCmd != nil {
+			return m, nextCmd
 		}
 	}
 	return m, nil
@@ -211,7 +230,6 @@ func (m model) View() string {
 	headerHeight, footerHeight := 6, 2
 	visibleHeight := m.height - headerHeight - footerHeight
 	if visibleHeight < 1 { visibleHeight = 1 }
-	
 	endIndex := m.offset + visibleHeight
 	if endIndex > len(m.devices) { endIndex = len(m.devices) }
 
@@ -222,44 +240,34 @@ func (m model) View() string {
 			continue
 		}
 
+		indicator := "  "
+		if d.Loading {
+			indicator = arrowStyle.Render("> ")
+		}
+
 		var histStr strings.Builder
-		
-		// [終極優化 1] 反向讀取 Ring Buffer (從最新的一筆開始往回讀)
 		for j := 1; j <= d.HistCount; j++ {
 			idx := (d.HistoryIdx - j + HIST_SIZE) % HIST_SIZE
 			h := d.History[idx]
-			if h.Success {
-				histStr.WriteString(upStyle.Render(h.Char))
-			} else {
-				histStr.WriteString(downStyle.Render(h.Char))
-			}
+			if h.Success { histStr.WriteString(upStyle.Render(h.Char)) } else { histStr.WriteString(downStyle.Render(h.Char)) }
 		}
 
-		// 判斷最新的一筆是否失敗
-		isDown := false
-		if d.HistCount > 0 {
-			lastIdx := (d.HistoryIdx - 1 + HIST_SIZE) % HIST_SIZE
-			isDown = !d.History[lastIdx].Success
-		}
-
-		// [終極優化 2] 渲染分離：避免 lipgloss 重複解析顏色代碼
-		infoText := fmt.Sprintf("   %-15s %-15s %4d%% %5.1f %5.1f %5d  ",
+		isDown := d.HistCount > 0 && !d.History[(d.HistoryIdx-1+HIST_SIZE)%HIST_SIZE].Success
+		infoText := fmt.Sprintf(" %-15s %-15s %4d%% %5.1f %5.1f %5d  ",
 			d.Name, d.IP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt)
 
+		s.WriteString(indicator)
 		if isDown {
 			s.WriteString(failRowStyle.Render(infoText))
 		} else {
 			s.WriteString(infoText)
 		}
-		
-		// 歷史紀錄已經上好色了，直接接在後面，不包進 failRowStyle 裡
 		s.WriteString(histStr.String() + "\n")
 	}
 
 	if rendered := endIndex - m.offset; rendered < visibleHeight {
 		s.WriteString(strings.Repeat("\n", visibleHeight-rendered))
 	}
-	
 	footer := fmt.Sprintf(" RTT Scale: %.0fms | Total: %d | Interval: %ds | q: quit", RTT_SCALE, len(m.devices), PING_INTERVAL)
 	s.WriteString("\n " + dimStyle.Render(footer))
 
@@ -271,13 +279,6 @@ func main() {
 	_ = yaml.Unmarshal(embeddedYaml, &cfg)
 	if cfg.Scale > 0 { RTT_SCALE = cfg.Scale }
 	hostname, _ := os.Hostname()
-	
-	p := tea.NewProgram(model{
-		devices:  cfg.Devices,
-		hostname: hostname,
-	}, tea.WithAltScreen())
-
-	if _, err := p.Run(); err != nil {
-		fmt.Printf("Error: %v", err)
-	}
+	p := tea.NewProgram(model{devices: cfg.Devices, hostname: hostname}, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil { fmt.Printf("Error: %v", err) }
 }
