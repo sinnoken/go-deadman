@@ -22,11 +22,11 @@ import (
 var embeddedYaml []byte
 
 const (
-	VERSION         = "v1.7.0"
-	HIST_SIZE       = 30
-	WINDOW_SIZE     = 50  // Moving Average 的樣本數
-	TICK_RATE_MS    = 120
-	MAX_CONCURRENT  = 50
+	VERSION        = "v1.7.0"
+	HIST_SIZE      = 30
+	WINDOW_SIZE    = 50  // Moving Average 的樣本數
+	TICK_RATE_MS   = 120
+	MAX_CONCURRENT = 50
 )
 
 var (
@@ -154,20 +154,26 @@ func runPingTask(idx int, ip string) tea.Cmd {
 			cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
 		}
 		out, _ := cmd.CombinedOutput()
-		return pingRes{idx: idx, rtt: parseRTT(string(out)), success: string(out) != "", isNative: false}
+		
+		// [修正點] 呼叫更新後的 parseRTT，確實抓到時間才算成功
+		rtt, isSuccess := parseRTT(string(out))
+		return pingRes{idx: idx, rtt: rtt, success: isSuccess, isNative: false}
 	}
 }
 
-func parseRTT(out string) float64 {
+// [修正點] 回傳 (float64, bool) 確保能分辨真的抓到時間還是字串亂碼/逾時
+func parseRTT(out string) (float64, bool) {
 	key := "time="
 	if runtime.GOOS == "windows" { key = "時間=" }
 	start := strings.Index(out, key)
-	if start == -1 { return 0 }
+	if start == -1 { return 0, false }
 	sub := out[start+len(key):]
 	end := strings.Index(sub, "ms")
-	if end == -1 { return 0 }
-	res, _ := strconv.ParseFloat(strings.TrimSpace(sub[:end]), 64)
-	return res
+	if end == -1 { return 0, false }
+	
+	res, err := strconv.ParseFloat(strings.TrimSpace(sub[:end]), 64)
+	if err != nil { return 0, false }
+	return res, true
 }
 
 // ---------------------------------------------------------
@@ -268,23 +274,23 @@ func (m model) View() string {
 }
 
 func main() {
-    var cfg Config
-    // 讀取檔案內容 (這裡假設你用 os.ReadFile 或 embeddedYaml)
-    _ = yaml.Unmarshal(embeddedYaml, &cfg)
+	var cfg Config
+	// 讀取檔案內容 (這裡假設你用 os.ReadFile 或 embeddedYaml)
+	_ = yaml.Unmarshal(embeddedYaml, &cfg)
 
-    // --- 統一設定預設值區塊 ---
-    if cfg.Interval == "" { cfg.Interval = "1s" }
-    if cfg.Jitter <= 0    { cfg.Jitter = 0.1 }   // 防止使用者填 0 或負數
-    // -----------------------
+	// --- 統一設定預設值區塊 ---
+	if cfg.Interval == "" { cfg.Interval = "1s" }
+	if cfg.Jitter <= 0    { cfg.Jitter = 0.1 }   // 防止使用者填 0 或負數
+	// -----------------------
 
-    hostname, _ := os.Hostname()
-    p := tea.NewProgram(model{
-        cfg:      cfg, 
-        devices:  cfg.Devices, 
-        hostname: hostname,
-    }, tea.WithAltScreen())
-    
-    if _, err := p.Run(); err != nil {
-        fmt.Printf("Error: %v", err)
-    }
+	hostname, _ := os.Hostname()
+	p := tea.NewProgram(model{
+		cfg:      cfg, 
+		devices:  cfg.Devices, 
+		hostname: hostname,
+	}, tea.WithAltScreen())
+	
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Error: %v", err)
+	}
 }
