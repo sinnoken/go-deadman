@@ -294,56 +294,65 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	if m.height == 0 {
-		return " Loading..."
-	}
-	var s strings.Builder
-	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render("NETWORK MONITOR [LOG-AVG MODE]")) + "\n")
+    if m.height == 0 {
+        return " Loading..."
+    }
+    var s strings.Builder
+    
+    // --- 修改部分開始 ---
+    // 1. 第一行：簡潔的主標題
+    s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render("NETWORK MONITOR")) + "\n")
 
-	// 更新表頭：加上 (ms) 更清晰
-	header := fmt.Sprintf("\n    %-15s %-15s %5s %7s %7s %5s  %-20s", "HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "SNT", "LOG-STATUS")
-	s.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(strings.Repeat("─", 85)) + "\n")
+    // 2. 第二行：From 來源、程式版號、Log+Avg 圖表說明
+    subTitle := fmt.Sprintf("From: %s | Version: %s | 顯示: Log+Avg 圖表", m.hostname, VERSION)
+    // 這裡使用 dimStyle 讓副標題顏色稍微柔和一點，也可以依據喜好換成其他 Style
+    s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, dimStyle.Render(subTitle)) + "\n")
 
-	for _, d := range m.devices {
-		if d.Name == "---" {
-			s.WriteString(dimStyle.Render("  " + strings.Repeat("-", 80)) + "\n")
-			continue
-		}
-		indicator := "  "
-		if d.Loading {
-			indicator = arrowStyle.Render("> ")
-		}
+    // 3. 原本的資料欄位表頭
+    header := fmt.Sprintf("\n    %-15s %-15s %5s %7s %7s %5s  %-20s", "HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "SNT", "LOG-STATUS")
+    s.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(strings.Repeat("─", 85)) + "\n")
+    // --- 修改部分結束 ---
 
-		var hist strings.Builder
-		for j := 1; j <= d.HistCount; j++ {
-			h := d.History[(d.HistoryIdx-j+HIST_SIZE)%HIST_SIZE]
-			if h.Success {
-				hist.WriteString(upStyle.Render(h.Char))
-			} else {
-				hist.WriteString(downStyle.Render(h.Char))
-			}
-		}
+    for _, d := range m.devices {
+        if d.Name == "---" {
+            s.WriteString(dimStyle.Render("  " + strings.Repeat("-", 80)) + "\n")
+            continue
+        }
+        indicator := "  "
+        if d.Loading {
+            indicator = arrowStyle.Render("> ")
+        }
 
-		tag := " "
-		if d.IsNative {
-			tag = "*"
-		}
-		
-		// 對齊更新後的寬度格式
-		line := fmt.Sprintf("%-15s %-15s %4d%% %7.1f %7.1f %5d%s ", d.Name, d.IP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt, tag)
+        var hist strings.Builder
+        for j := 1; j <= d.HistCount; j++ {
+            h := d.History[(d.HistoryIdx-j+HIST_SIZE)%HIST_SIZE]
+            if h.Success {
+                hist.WriteString(upStyle.Render(h.Char))
+            } else {
+                hist.WriteString(downStyle.Render(h.Char))
+            }
+        }
 
-		s.WriteString(indicator)
-		if d.HistCount > 0 && !d.History[(d.HistoryIdx-1+HIST_SIZE)%HIST_SIZE].Success {
-			s.WriteString(failRowStyle.Render(line))
-		} else {
-			s.WriteString(line)
-		}
-		s.WriteString(hist.String() + "\n")
-	}
+        tag := " "
+        if d.IsNative {
+            tag = "*"
+        }
+        
+        // 對齊更新後的寬度格式
+        line := fmt.Sprintf("%-15s %-15s %4d%% %7.1f %7.1f %5d%s ", d.Name, d.IP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt, tag)
 
-	footer := fmt.Sprintf("\n Interval: %s | Jitter: %.f%% | *: Native | Window: %d", m.cfg.Interval, m.cfg.Jitter*100, WINDOW_SIZE)
-	s.WriteString(dimStyle.Render(footer))
-	return s.String()
+        s.WriteString(indicator)
+        if d.HistCount > 0 && !d.History[(d.HistoryIdx-1+HIST_SIZE)%HIST_SIZE].Success {
+            s.WriteString(failRowStyle.Render(line))
+        } else {
+            s.WriteString(line)
+        }
+        s.WriteString(hist.String() + "\n")
+    }
+
+    footer := fmt.Sprintf("\n Interval: %s | Jitter: %.f%% | *: Native | Window: %d", m.cfg.Interval, m.cfg.Jitter*100, WINDOW_SIZE)
+    s.WriteString(dimStyle.Render(footer))
+    return s.String()
 }
 
 // ---------------------------------------------------------
