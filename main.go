@@ -26,10 +26,9 @@ var embeddedYaml []byte
 // ---------------------------------------------------------
 
 const (
-	VERSION        = "v1.7.1" // 升級一下小版本號慶祝 Bug 修復
-	HIST_SIZE      = 30       // 歷史紀錄長度
-	WINDOW_SIZE    = 50       // Moving Average 的樣本數
-	MAX_CONCURRENT = 50       // 最大併發 Ping 數量
+	VERSION     = "v1.8.0" // 背景多執行緒架構升級
+	HIST_SIZE   = 30       // 歷史紀錄長度
+	WINDOW_SIZE = 50       // Moving Average 的樣本數
 )
 
 var (
@@ -74,18 +73,18 @@ type Config struct {
 }
 
 type model struct {
-	cfg       Config
-	devices   []*Device
-	step      int
-	width     int
-	height    int
-	hostname  string
-	pingQueue []int
+	cfg      Config
+	devices  []*Device
+	width    int
+	height   int
+	hostname string
+	sub      chan tea.Msg // [核心架構] 用來接收背景 Goroutine 的通訊頻道
 }
 
 // Bubbletea 訊息類型
-type startPingMsg struct{}
-type pingRes struct {
+type initMsg struct{}
+type pingStartMsg struct{ idx int }
+type pingResMsg struct {
 	idx      int
 	rtt      float64
 	success  bool
@@ -145,52 +144,73 @@ func (d *Device) UpdateStats(rtt float64, success bool) {
 }
 
 // ---------------------------------------------------------
-// 網路層邏輯：Ping 發送與字串解析
+// 網路層邏輯：獨立背景執行緒 (Goroutine Worker)
 // ---------------------------------------------------------
 
-func runPingTask(idx int, ip string) tea.Cmd {
-	return func() tea.Msg {
+func deviceWorker(idx int, ip string, interval time.Duration, jitter float64, sub chan<- tea.Msg) {
+	// 【防踩踏機制】給每個設備一個隨機的初始延遲，讓它們不要在同一個毫秒起跑
+	offset := time.Duration(rand.Float64() * float64(interval))
+	time.Sleep(offset)
+
+	for {
+		// 通知 UI 開始測量 (顯示 > 箭頭)
+		sub <- pingStartMsg{idx: idx}
+
+		var res pingResMsg
+		res.idx = idx
+
 		// 1. 嘗試使用原生 Pro-bing
 		pinger, err := probing.NewPinger(ip)
 		if err == nil {
 			pinger.Count = 1
-			pinger.Timeout = time.Second
+			pinger.Timeout = interval
 
-			// 動態處理 OS 權限差異
 			if runtime.GOOS == "windows" {
-				pinger.SetPrivileged(true) // Windows 需 Admin 權限與 Raw Socket
+				pinger.SetPrivileged(true)
 			} else {
-				pinger.SetPrivileged(false) // Unix-like 預設嘗試 UDP Ping
+				pinger.SetPrivileged(false)
 			}
 
 			if err = pinger.Run(); err == nil {
 				stats := pinger.Statistics()
 				if stats.PacketsRecv > 0 {
-					return pingRes{
-						idx:      idx,
-						rtt:      float64(stats.MaxRtt.Microseconds()) / 1000.0,
-						success:  true,
-						isNative: true,
-					}
+					res.rtt = float64(stats.MaxRtt.Microseconds()) / 1000.0
+					res.success = true
+					res.isNative = true
 				}
 			}
 		}
 
 		// 2. Fallback：使用系統指令
-		var cmd *exec.Cmd
-		if runtime.GOOS == "windows" {
-			cmd = exec.Command("ping", "-n", "1", "-w", "1000", ip)
-		} else {
-			cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
-		}
-		out, _ := cmd.CombinedOutput()
+		if !res.success {
+			var cmd *exec.Cmd
+			timeoutMs := strconv.Itoa(int(interval.Milliseconds()))
+			if runtime.GOOS == "windows" {
+				cmd = exec.Command("ping", "-n", "1", "-w", timeoutMs, ip)
+			} else {
+				cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
+			}
+			out, _ := cmd.CombinedOutput()
 
-		rtt, isSuccess := parseRTT(string(out))
-		return pingRes{idx: idx, rtt: rtt, success: isSuccess, isNative: false}
+			rtt, isSuccess := parseRTT(string(out))
+			res.rtt = rtt
+			res.success = isSuccess
+			res.isNative = false
+		}
+
+		// 把結果傳回給 UI
+		sub <- res
+
+		// 加上 Jitter 進行下一次等待
+		jit := jitter
+		if jit <= 0 {
+			jit = 0.1
+		}
+		nextWait := time.Duration(float64(interval) * (1 + (rand.Float64()*2 - 1)*jit))
+		time.Sleep(nextWait)
 	}
 }
 
-// 強健的字串解析器，支援多語系與極速 (<1ms) 情況
 func parseRTT(out string) (float64, bool) {
 	keys := []string{"time=", "time<", "時間=", "時間<"}
 	var start int = -1
@@ -226,8 +246,15 @@ func parseRTT(out string) (float64, bool) {
 // Bubbletea UI 渲染與事件更新
 // ---------------------------------------------------------
 
+// 監聽背景 Channel 的持續指令
+func listenForMsg(sub chan tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		return <-sub
+	}
+}
+
 func (m model) Init() tea.Cmd {
-	return func() tea.Msg { return startPingMsg{} }
+	return func() tea.Msg { return initMsg{} }
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -239,49 +266,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-	case startPingMsg:
-		m.pingQueue = make([]int, 0, len(m.devices))
-		var cmds []tea.Cmd
-		for i, d := range m.devices {
-			if d.Name != "---" {
-				d.Loading = true
-				m.pingQueue = append(m.pingQueue, i)
-			}
-		}
-		
-		batch := MAX_CONCURRENT
-		if len(m.pingQueue) < batch {
-			batch = len(m.pingQueue)
-		}
-		for i := 0; i < batch; i++ {
-			cmds = append(cmds, runPingTask(m.pingQueue[i], m.devices[m.pingQueue[i]].IP))
-		}
-		m.pingQueue = m.pingQueue[batch:]
-
+	case initMsg:
 		itv, _ := time.ParseDuration(m.cfg.Interval)
 		if itv == 0 {
 			itv = 2 * time.Second
 		}
-		jit := m.cfg.Jitter
-		if jit == 0 {
-			jit = 0.1
+		// 啟動所有設備的專屬背景工人
+		for i, d := range m.devices {
+			if d.Name != "---" {
+				go deviceWorker(i, d.IP, itv, m.cfg.Jitter, m.sub)
+			}
 		}
-		next := time.Duration(float64(itv) * (1 + (rand.Float64()*2 - 1)*jit))
+		// 開始監聽回報
+		return m, listenForMsg(m.sub)
 
-		return m, tea.Batch(tea.Batch(cmds...), tea.Tick(next, func(t time.Time) tea.Msg { return startPingMsg{} }))
+	case pingStartMsg:
+		m.devices[msg.idx].Loading = true
+		return m, listenForMsg(m.sub) // 繼續監聽下一個事件
 
-	case pingRes:
+	case pingResMsg:
 		d := m.devices[msg.idx]
 		d.Loading, d.IsNative = false, msg.isNative
 		d.UpdateStats(msg.rtt, msg.success)
-
-		var next tea.Cmd
-		if len(m.pingQueue) > 0 {
-			idx := m.pingQueue[0]
-			m.pingQueue = m.pingQueue[1:]
-			next = runPingTask(idx, m.devices[idx].IP)
-		}
-		return m, next
+		return m, listenForMsg(m.sub) // 繼續監聽下一個事件
 	}
 	return m, nil
 }
@@ -293,7 +300,8 @@ func (m model) View() string {
 	var s strings.Builder
 	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render("NETWORK MONITOR [LOG-AVG MODE]")) + "\n")
 
-	header := fmt.Sprintf("\n    %-15s %-15s %5s %5s %5s %5s  %-20s", "HOSTNAME", "ADDRESS", "LOSS", "RTT", "AVG(50)", "SNT", "LOG-STATUS")
+	// 更新表頭：加上 (ms) 更清晰
+	header := fmt.Sprintf("\n    %-15s %-15s %5s %7s %7s %5s  %-20s", "HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "SNT", "LOG-STATUS")
 	s.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(strings.Repeat("─", 85)) + "\n")
 
 	for _, d := range m.devices {
@@ -320,7 +328,9 @@ func (m model) View() string {
 		if d.IsNative {
 			tag = "*"
 		}
-		line := fmt.Sprintf("%-15s %-15s %4d%% %5.1f %5.1f %5d%s ", d.Name, d.IP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt, tag)
+		
+		// 對齊更新後的寬度格式
+		line := fmt.Sprintf("%-15s %-15s %4d%% %7.1f %7.1f %5d%s ", d.Name, d.IP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt, tag)
 
 		s.WriteString(indicator)
 		if d.HistCount > 0 && !d.History[(d.HistoryIdx-1+HIST_SIZE)%HIST_SIZE].Success {
@@ -352,10 +362,15 @@ func main() {
 	}
 
 	hostname, _ := os.Hostname()
+	
+	// 初始化 Channel (帶有緩衝區以防短暫高峰)
+	subChan := make(chan tea.Msg, 1000)
+
 	p := tea.NewProgram(model{
 		cfg:      cfg,
 		devices:  cfg.Devices,
 		hostname: hostname,
+		sub:      subChan,
 	}, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
