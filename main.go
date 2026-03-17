@@ -16,7 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-//go:embed tasks.yaml
+//go:embed config.yaml
 var embeddedYaml []byte
 
 const VERSION = "v1.1.1"
