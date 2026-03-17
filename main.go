@@ -12,6 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	probing "github.com/prometheus-community/pro-bing"
 	"gopkg.in/yaml.v3"
 )
 
@@ -97,20 +98,52 @@ func parsePingTime(out string) float64 {
 	return res
 }
 
+// runPingTask 現在包含自動降級邏輯
 func runPingTask(idx int, ip string) tea.Cmd {
 	return func() tea.Msg {
-		var cmd *exec.Cmd
-		if runtime.GOOS == "windows" {
-			cmd = exec.Command("ping", "-n", "1", "-w", "1000", ip)
-		} else {
-			cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
+		// 優先方案：使用 pro-bing (原生 ICMP/UDP)
+		pinger, err := probing.NewPinger(ip)
+		if err == nil {
+			pinger.Count = 1
+			pinger.Timeout = time.Second
+			// 在多數 OS 上，false 代表使用 UDP-based ICMP，不需要 root
+			pinger.SetPrivileged(false) 
+			
+			err = pinger.Run() // 執行 Ping
+			if err == nil {
+				stats := pinger.Statistics()
+				if stats.PacketsRecv > 0 {
+					// 成功：回傳微秒級精度轉為 float64 毫秒
+					rttMs := float64(stats.MaxRtt.Microseconds()) / 1000.0
+					return pingRes{idx: idx, rtt: rttMs, success: true}
+				}
+			}
 		}
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return pingRes{idx: idx, rtt: 0, success: false}
-		}
-		return pingRes{idx: idx, rtt: parsePingTime(string(out)), success: true}
+
+		// 降級方案：如果 pro-bing 失敗 (權限或 Socket 錯誤)，跳回 OS-Ping
+		return runOSPing(idx, ip)
 	}
+}
+
+// 原始的 OS Ping 邏輯抽離出來作為備援
+func runOSPing(idx int, ip string) tea.Msg {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("ping", "-n", "1", "-w", "1000", ip)
+	} else {
+		cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
+	}
+	
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return pingRes{idx: idx, rtt: 0, success: false}
+	}
+	
+	rtt := parsePingTime(string(out))
+	if rtt == 0 && !strings.Contains(strings.ToLower(string(out)), "ms") {
+		return pingRes{idx: idx, rtt: 0, success: false}
+	}
+	return pingRes{idx: idx, rtt: rtt, success: true}
 }
 
 func (m model) Init() tea.Cmd {
