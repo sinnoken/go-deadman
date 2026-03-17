@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,8 +25,8 @@ var (
 	RTT_SCALE = 10.0
 	WHEEL     = []string{"|", "/", "-", "\\"}
 
-	// 標題：小寫 + 置中 (在 View 中處理對齊)
-	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Lower(true)
+	// 標題樣式 (移除錯誤的 .Lower)
+	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
 	
 	// 表頭：橘色
 	headerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
@@ -134,7 +135,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.step++
 		if len(m.devices) > 0 {
 			m.scanIndex = m.step % len(m.devices)
-			// 自動滾動邏輯 (預留標題與表頭高度約 8 行)
+			// 自動滾動邏輯
 			visibleLines := m.height - 8
 			if visibleLines < 1 { visibleLines = 1 }
 			if m.scanIndex >= m.offset+visibleLines { m.offset = m.scanIndex - visibleLines + 1 }
@@ -171,9 +172,9 @@ func (m model) View() string {
 
 	var s strings.Builder
 
-	// 1. 第一行：小寫 dead man 置中
+	// 1. 第一行：dead man 置中 (使用 strings.ToLower 強制小寫)
 	wheelChar := WHEEL[m.step%len(WHEEL)]
-	titleText := fmt.Sprintf("go-deadman %s", wheelChar)
+	titleText := strings.ToLower(fmt.Sprintf("dead man %s", wheelChar))
 	centeredTitle := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render(titleText))
 	s.WriteString(centeredTitle + "\n")
 
@@ -217,7 +218,7 @@ func (m model) View() string {
 			if h.Success { histStr.WriteString(upStyle.Render(h.Char)) } else { histStr.WriteString(downStyle.Render(h.Char)) }
 		}
 
-		// 判斷是否失敗 (整行紅色)
+		// 判斷是否失敗 (檢查最近一次紀錄)
 		isDown := len(d.History) > 0 && !d.History[0].Success
 		rowText := fmt.Sprintf("%s %-15s %-15s %4d%% %5.0f %5.0f %5d  %s",
 			indicator, d.Name, d.IP, lossRate, d.LastRTT, avg, d.Snt, histStr.String())
