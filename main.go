@@ -268,10 +268,23 @@ func (m model) View() string {
 }
 
 func main() {
-	var cfg Config
-	_ = yaml.Unmarshal(embeddedYaml, &cfg)
-	if cfg.Interval == "" { cfg.Interval = "2s" }
-	hostname, _ := os.Hostname()
-	p := tea.NewProgram(model{cfg: cfg, devices: cfg.Devices, hostname: hostname}, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil { fmt.Printf("Error: %v", err) }
+    var cfg Config
+    // 讀取檔案內容 (這裡假設你用 os.ReadFile 或 embeddedYaml)
+    _ = yaml.Unmarshal(embeddedYaml, &cfg)
+
+    // --- 統一設定預設值區塊 ---
+    if cfg.Interval == "" { cfg.Interval = "1s" }
+    if cfg.Jitter <= 0    { cfg.Jitter = 0.1 }   // 防止使用者填 0 或負數
+    // -----------------------
+
+    hostname, _ := os.Hostname()
+    p := tea.NewProgram(model{
+        cfg:      cfg, 
+        devices:  cfg.Devices, 
+        hostname: hostname,
+    }, tea.WithAltScreen())
+    
+    if _, err := p.Run(); err != nil {
+        fmt.Printf("Error: %v", err)
+    }
 }
