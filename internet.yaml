@@ -1,0 +1,88 @@
+scale: 10
+interval: 1s
+devices:
+  # --- 三大公雲 (Top 3 Public Clouds) ---
+  - name: "Google-Cloud-DNS"
+    ip: "8.8.8.8"
+  - name: "AWS-Global-Accelerator"
+    ip: "13.248.118.1"
+  - name: "Azure-Edge"
+    ip: "13.107.21.200"
+
+  # --- 世界前5大 ISP 業者 (Top 5 Global Tier-1 ISPs) ---
+  - name: "Lumen-Level3"
+    ip: "4.2.2.1"
+  - name: "NTT-Communications"
+    ip: "129.250.35.250"
+  - name: "Telia-Arelion"
+    ip: "213.248.0.1"
+  - name: "GTT-Communications"
+    ip: "141.136.0.1"
+  - name: "Tata-Communications"
+    ip: "121.240.2.197"
+
+  # --- 世界前5大 IX 業者 (Top 5 Global IXPs) ---
+  - name: "DE-CIX-Frankfurt"
+    ip: "80.81.192.1"
+  - name: "AMS-IX-Amsterdam"
+    ip: "80.249.208.1"
+  - name: "LINX-London"
+    ip: "195.66.224.1"
+  - name: "Equinix-Ashburn"
+    ip: "206.126.236.1"
+  - name: "HKIX-Hong-Kong"
+    ip: "202.40.161.1"
+
+  # --- 世界前3大 CDN 業者 (Top 3 Global CDNs) ---
+  - name: "Cloudflare-Anycast"
+    ip: "1.1.1.1"
+  - name: "Akamai-Edge"
+    ip: "23.211.0.1"
+  - name: "Fastly-Anycast"
+    ip: "151.101.1.57"
+
+  # --- 世界的 BGP 登記業者 (Global BGP Backbone) ---
+  - name: "Cogent-Communications"
+    ip: "66.28.0.45"
+  - name: "Hurricane-Electric"
+    ip: "74.82.42.42"
+
+  # --- 台灣前10大 ISP (Top 10 Taiwan ISPs) ---
+  - name: "HiNet-Chunghwa"
+    ip: "168.95.1.1"
+  - name: "Seednet-FarEasTone"
+    ip: "139.175.1.1"
+  - name: "TWM-Broadband"
+    ip: "211.20.144.1"
+  - name: "Kbro-Cable"
+    ip: "123.193.0.1"
+  - name: "CNS-Homeplus"
+    ip: "219.85.128.1"
+  - name: "TBC-Broadband"
+    ip: "211.73.161.1"
+  - name: "TOPT-Broadband"
+    ip: "123.240.0.1"
+  - name: "So-net-Taiwan"
+    ip: "61.64.127.1"
+  - name: "Vee-Time"
+    ip: "123.204.1.1"
+  - name: "APTG-Telecom"
+    ip: "210.209.10.1"
+
+  # --- 台灣學術網路 (TANet Backbone) ---
+  - name: "TANet-MOE-Core"
+    ip: "140.111.1.1"
+  - name: "TANet-NTU"
+    ip: "140.112.2.2"
+  - name: "TANet-NYCU"
+    ip: "140.113.1.1"
+  - name: "TANet-NTHU"
+    ip: "140.114.1.1"
+  - name: "TANet-NCKU"
+    ip: "140.116.1.1"
+
+  # --- 台灣二類電信與 IDC 業者 (Taiwan Type II / IDC) ---
+  - name: "Chief-Telecom-IDC"
+    ip: "202.168.124.1"
+  - name: "NCHC-Taiwan"
+    ip: "140.110.16.1"
