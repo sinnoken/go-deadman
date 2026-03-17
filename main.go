@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -17,16 +18,27 @@ import (
 //go:embed tasks.yaml
 var embeddedYaml []byte
 
-// --- 常量與樣式 ---
+const VERSION = "v1.1.0"
+
+// --- 樣式定義 ---
 var (
 	RTT_SCALE = 10.0
 	WHEEL     = []string{"|", "/", "-", "\\"}
 
-	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
-	upStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("10")) // 綠色
-	downStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))  // 紅色
+	// 標題：小寫 + 置中 (在 View 中處理對齊)
+	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Lower(true)
+	
+	// 表頭：橘色
+	headerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
+	
+	// 基礎樣式
+	upStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("10")) // 綠色紀錄
+	downStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))  // 紅色紀錄
 	dimStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	arrowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
+	
+	// 整行失敗樣式：紅色
+	failRowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
 )
 
 type Heartbeat struct {
@@ -56,7 +68,8 @@ type model struct {
 	scanIndex int
 	width     int
 	height    int
-	offset    int // 滾動偏移量
+	offset    int
+	hostname  string
 }
 
 type spinMsg struct{}
@@ -67,9 +80,7 @@ type pingRes struct {
 }
 
 func getResultChar(rtt float64, success bool) string {
-	if !success {
-		return "·"
-	}
+	if !success { return "·" }
 	if rtt < RTT_SCALE*1 { return "▁" }
 	if rtt < RTT_SCALE*2 { return "▂" }
 	if rtt < RTT_SCALE*3 { return "▃" }
@@ -89,7 +100,6 @@ func runPing(idx int, ip string) tea.Cmd {
 		} else {
 			cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
 		}
-
 		err := cmd.Run()
 		rtt := float64(time.Since(start).Milliseconds())
 		return pingRes{idx: idx, rtt: rtt, success: err == nil}
@@ -125,21 +135,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.step++
 		if len(m.devices) > 0 {
 			m.scanIndex = m.step % len(m.devices)
-
-			// --- 自動滾動計算 ---
-			headerHeight := 6 // 標題 + 表頭行數
-			footerHeight := 2 // 底部提示行
-			visibleLines := m.height - headerHeight - footerHeight
+			// 自動滾動邏輯 (預留標題與表頭高度約 8 行)
+			visibleLines := m.height - 8
 			if visibleLines < 1 { visibleLines = 1 }
-
-			// 如果指標超出下邊界
-			if m.scanIndex >= m.offset+visibleLines {
-				m.offset = m.scanIndex - visibleLines + 1
-			}
-			// 如果指標超出上邊界 (例如循環回到開頭)
-			if m.scanIndex < m.offset {
-				m.offset = m.scanIndex
-			}
+			if m.scanIndex >= m.offset+visibleLines { m.offset = m.scanIndex - visibleLines + 1 }
+			if m.scanIndex < m.offset { m.offset = m.scanIndex }
 		}
 
 		target := m.devices[m.scanIndex]
@@ -162,50 +162,46 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.Loss++
 		}
 		d.History = append([]Heartbeat{{Char: char, Success: msg.success}}, d.History...)
-		if len(d.History) > 30 {
-			d.History = d.History[:30]
-		}
+		if len(d.History) > 30 { d.History = d.History[:30] }
 	}
 	return m, nil
 }
 
 func (m model) View() string {
-	if m.height == 0 {
-		return " Initializing..."
-	}
+	if m.height == 0 { return " Initializing..." }
 
 	var s strings.Builder
 
-	// 1. 標題區
+	// 1. 第一行：小寫 dead man 置中
 	wheelChar := WHEEL[m.step%len(WHEEL)]
-	s.WriteString(fmt.Sprintf("\n %s %s  %s\n", 
-		titleStyle.Render("go-deadman"), 
-		wheelChar, 
-		dimStyle.Render("RTT Scale: "+strconv.Itoa(int(RTT_SCALE))+"ms")))
+	titleText := fmt.Sprintf("go-deadman %s", wheelChar)
+	centeredTitle := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render(titleText))
+	s.WriteString(centeredTitle + "\n")
 
-	// 2. 表頭區
-	s.WriteString(fmt.Sprintf("\n    %-15s %-15s %5s %5s %5s %5s  %-20s\n",
-		"HOSTNAME", "ADDRESS", "LOSS", "RTT", "AVG", "SNT", "RESULT"))
-	s.WriteString(dimStyle.Render(" " + strings.Repeat("─", 85)) + "\n")
+	// 2. 第二行：From 資訊 靠右
+	fromInfo := fmt.Sprintf("From: %s [%s]", m.hostname, VERSION)
+	rightInfo := lipgloss.PlaceHorizontal(m.width, lipgloss.Right, dimStyle.Render(fromInfo))
+	s.WriteString(rightInfo + "\n")
 
-	// 3. 計算渲染區間
+	// 3. 表頭區 (橘色)
+	headerLine := fmt.Sprintf("\n    %-15s %-15s %5s %5s %5s %5s  %-20s",
+		"HOSTNAME", "ADDRESS", "LOSS", "RTT", "AVG", "SNT", "RESULT")
+	s.WriteString(headerStyle.Render(headerLine) + "\n")
+	s.WriteString(dimStyle.Render(" "+strings.Repeat("─", 85)) + "\n")
+
+	// 4. 計算渲染區間
 	headerHeight := 6
 	footerHeight := 2
 	visibleHeight := m.height - headerHeight - footerHeight
 	if visibleHeight < 0 { visibleHeight = 0 }
-
 	endIndex := m.offset + visibleHeight
-	if endIndex > len(m.devices) {
-		endIndex = len(m.devices)
-	}
+	if endIndex > len(m.devices) { endIndex = len(m.devices) }
 
-	// 4. 渲染設備行 (僅限可見範圍)
+	// 5. 渲染設備行
 	for i := m.offset; i < endIndex; i++ {
 		d := m.devices[i]
 		indicator := "  "
-		if i == m.scanIndex {
-			indicator = arrowStyle.Render("> ")
-		}
+		if i == m.scanIndex { indicator = arrowStyle.Render("> ") }
 
 		if d.Name == "---" {
 			s.WriteString(fmt.Sprintf("%s%s\n", indicator, dimStyle.Render(strings.Repeat("-", 80))))
@@ -213,59 +209,49 @@ func (m model) View() string {
 		}
 
 		lossRate := 0
-		if d.Snt > 0 {
-			lossRate = (d.Loss * 100) / d.Snt
-		}
+		if d.Snt > 0 { lossRate = (d.Loss * 100) / d.Snt }
 		avg := 0.0
-		if d.Snt-d.Loss > 0 {
-			avg = d.TotalRTT / float64(d.Snt-d.Loss)
-		}
+		if d.Snt-d.Loss > 0 { avg = d.TotalRTT / float64(d.Snt-d.Loss) }
 
 		var histStr strings.Builder
 		for _, h := range d.History {
-			if h.Success {
-				histStr.WriteString(upStyle.Render(h.Char))
-			} else {
-				histStr.WriteString(downStyle.Render(h.Char))
-			}
+			if h.Success { histStr.WriteString(upStyle.Render(h.Char)) } else { histStr.WriteString(downStyle.Render(h.Char)) }
 		}
 
-		rowStyle := lipgloss.NewStyle()
-		if len(d.History) > 0 && !d.History[0].Success {
-			rowStyle = rowStyle.Bold(true).Foreground(lipgloss.Color("15"))
-		}
-
-		line := fmt.Sprintf("%s %-15s %-15s %4d%% %5.0f %5.0f %5d  %s",
+		// 判斷是否失敗 (整行紅色)
+		isDown := len(d.History) > 0 && !d.History[0].Success
+		rowText := fmt.Sprintf("%s %-15s %-15s %4d%% %5.0f %5.0f %5d  %s",
 			indicator, d.Name, d.IP, lossRate, d.LastRTT, avg, d.Snt, histStr.String())
-		
-		s.WriteString(rowStyle.Render(line) + "\n")
+
+		if isDown {
+			s.WriteString(failRowStyle.Render(rowText) + "\n")
+		} else {
+			s.WriteString(rowText + "\n")
+		}
 	}
 
-	// 5. 補白 (防止底部 UI 晃動)
+	// 6. 補白與頁尾
 	renderedLines := endIndex - m.offset
-	if renderedLines < visibleHeight {
-		s.WriteString(strings.Repeat("\n", visibleHeight-renderedLines))
-	}
-
-	// 6. 頁尾
-	info := fmt.Sprintf(" Total: %d | Watching: %d-%d | q: quit", len(m.devices), m.offset+1, endIndex)
-	s.WriteString("\n " + dimStyle.Render(info))
+	if renderedLines < visibleHeight { s.WriteString(strings.Repeat("\n", visibleHeight-renderedLines)) }
+	
+	footer := fmt.Sprintf(" RTT Scale: %.0fms | Total: %d | q: quit", RTT_SCALE, len(m.devices))
+	s.WriteString("\n " + dimStyle.Render(footer))
 
 	return s.String()
 }
 
 func main() {
 	var cfg Config
-	err := yaml.Unmarshal(embeddedYaml, &cfg)
-	if err != nil {
-		fmt.Printf("YAML Error: %v", err)
-		return
-	}
-	if cfg.Scale > 0 {
-		RTT_SCALE = cfg.Scale
-	}
+	_ = yaml.Unmarshal(embeddedYaml, &cfg)
+	if cfg.Scale > 0 { RTT_SCALE = cfg.Scale }
 
-	p := tea.NewProgram(model{devices: cfg.Devices}, tea.WithAltScreen())
+	hostname, _ := os.Hostname()
+	
+	p := tea.NewProgram(model{
+		devices:  cfg.Devices,
+		hostname: hostname,
+	}, tea.WithAltScreen())
+
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v", err)
 	}
