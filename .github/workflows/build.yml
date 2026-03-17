@@ -18,7 +18,7 @@ jobs:
     strategy:
       matrix:
         # 第一維度：版本
-        config: [a, b] 
+        config: [tasks ] 
         # 第二維度：作業系統
         goos: [linux, windows, darwin]
         # 第三維度：架構
