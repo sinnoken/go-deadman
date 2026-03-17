@@ -58,16 +58,15 @@ jobs:
 
       - name: Build Binary
         run: |
-          BINARY_NAME=deadman-${{ matrix.goos }}-${{ matrix.goarch }}
+          # 加上 matrix.config 區分檔名
+          BINARY_NAME=deadman-${{ matrix.config }}-${{ matrix.goos }}-${{ matrix.goarch }}
           if [ "${{ matrix.goos }}" = "windows" ]; then
             BINARY_NAME=${BINARY_NAME}.exe
           fi
           
-          # 編譯瘦身
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
           go build -ldflags="-s -w" -o "$BINARY_NAME" .
-
-          # Windows 壓縮
+          
           if [ "${{ matrix.goos }}" = "windows" ] && [ "${{ matrix.goarch }}" = "amd64" ]; then
             sudo apt-get update && sudo apt-get install -y upx
             upx --best "$BINARY_NAME"
@@ -76,8 +75,9 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: deadman-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: deadman-${{ matrix.goos }}-${{ matrix.goarch }}*
+          # 這裡必須唯一，加入 matrix.config
+          name: deadman-${{ matrix.config }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: deadman-${{ matrix.config }}-${{ matrix.goos }}-${{ matrix.goarch }}*
 
   # --- 新增的 Release Job ---
   release:
