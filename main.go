@@ -1,11 +1,12 @@
 package main
 
 import (
-	"context" // [新增] 用於控制備用系統指令的超時
+	"context"
 	_ "embed"
 	"fmt"
 	"math"
 	"math/rand"
+	"net"
 	"os"
 	"os/exec"
 	"runtime"
@@ -27,9 +28,9 @@ var embeddedYaml []byte
 // ---------------------------------------------------------
 
 const (
-	VERSION     = "v1.8.1" // 修正潛在邏輯隱患與時間偏移
-	HIST_SIZE   = 30       // 歷史紀錄長度
-	WINDOW_SIZE = 50       // Moving Average 的樣本數
+	VERSION     = "v1.9.0" // 非同步 DNS 解析架構升級
+	HIST_SIZE   = 30
+	WINDOW_SIZE = 50
 )
 
 var (
@@ -58,13 +59,14 @@ type Device struct {
 	Snt        int
 	LastRTT    float64
 	AvgRTT     float64
-	Window     []float64 // 滑動窗口樣本
+	Window     []float64
 	LossRate   int
-	History    [HIST_SIZE]Heartbeat // Ring Buffer
+	History    [HIST_SIZE]Heartbeat
 	HistoryIdx int
 	HistCount  int
 	Loading    bool
-	IsNative   bool // 是否使用 Pro-bing 成功發包
+	IsNative   bool
+	IsDNSFail  bool
 }
 
 type Config struct {
@@ -79,7 +81,7 @@ type model struct {
 	width    int
 	height   int
 	hostname string
-	sub      chan tea.Msg // [核心架構] 用來接收背景 Goroutine 的通訊頻道
+	sub      chan tea.Msg
 }
 
 // Bubbletea 訊息類型
@@ -90,6 +92,26 @@ type pingResMsg struct {
 	rtt      float64
 	success  bool
 	isNative bool
+}
+
+// [新增] DNS 解析完成的訊息回傳
+type dnsResMsg struct {
+	idx    int
+	name   string
+	ip     string
+	isFail bool
+}
+
+// ---------------------------------------------------------
+// 輔助函式：字串截斷
+// ---------------------------------------------------------
+
+func truncate(s string, maxLen int) string {
+	r := []rune(s)
+	if len(r) > maxLen {
+		return string(r[:maxLen-2]) + ".."
+	}
+	return s
 }
 
 // ---------------------------------------------------------
@@ -103,11 +125,9 @@ func getLogChar(rtt, avg float64, success bool) string {
 	if avg <= 0 {
 		return "▄"
 	}
-
 	ratio := rtt / avg
 	diff := math.Log2(ratio) * 2.0
 	idx := 3 + int(math.Round(diff))
-
 	scales := []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
 	if idx < 0 {
 		idx = 0
@@ -148,32 +168,68 @@ func (d *Device) UpdateStats(rtt float64, success bool) {
 // 網路層邏輯：獨立背景執行緒 (Goroutine Worker)
 // ---------------------------------------------------------
 
+// [新增] 負責處理 DNS 並接續啟動 Ping 的統籌 Worker
+func resolveAndStartWorker(idx int, rawName, rawIP string, interval time.Duration, jitter float64, sub chan<- tea.Msg) {
+	name := strings.TrimSpace(rawName)
+	ip := strings.TrimSpace(rawIP)
+	isFail := false
+
+	// 1. DNS 正反解邏輯
+	if name == "" && ip != "" {
+		names, err := net.LookupAddr(ip)
+		if err == nil && len(names) > 0 {
+			name = strings.TrimSuffix(names[0], ".")
+		} else {
+			name = ip
+		}
+	} else if ip == "" && name != "" {
+		ips, err := net.LookupIP(name)
+		if err == nil && len(ips) > 0 {
+			ip = ips[0].String()
+		} else {
+			ip = "DNS_FAIL"
+			isFail = true
+		}
+	}
+
+	// 2. 截斷過長字串
+	name = truncate(name, 15)
+	ip = truncate(ip, 15)
+
+	// 3. 把解析結果傳回給 UI 顯示
+	sub <- dnsResMsg{
+		idx:    idx,
+		name:   name,
+		ip:     ip,
+		isFail: isFail,
+	}
+
+	// 4. 如果 DNS 成功，才進入無限循環的 Ping Worker
+	if !isFail {
+		deviceWorker(idx, ip, interval, jitter, sub)
+	}
+}
+
 func deviceWorker(idx int, ip string, interval time.Duration, jitter float64, sub chan<- tea.Msg) {
-	// 【防踩踏機制】給每個設備一個隨機的初始延遲，讓它們不要在同一個毫秒起跑
 	offset := time.Duration(rand.Float64() * float64(interval))
 	time.Sleep(offset)
 
 	for {
-		start := time.Now() // [修正] 記錄開始時間，用以計算耗時
-
-		// 通知 UI 開始測量 (顯示 > 箭頭)
+		start := time.Now()
 		sub <- pingStartMsg{idx: idx}
 
 		var res pingResMsg
 		res.idx = idx
 
-		// 1. 嘗試使用原生 Pro-bing
 		pinger, err := probing.NewPinger(ip)
 		if err == nil {
 			pinger.Count = 1
 			pinger.Timeout = interval
-
 			if runtime.GOOS == "windows" {
 				pinger.SetPrivileged(true)
 			} else {
 				pinger.SetPrivileged(false)
 			}
-
 			if err = pinger.Run(); err == nil {
 				stats := pinger.Statistics()
 				if stats.PacketsRecv > 0 {
@@ -184,11 +240,8 @@ func deviceWorker(idx int, ip string, interval time.Duration, jitter float64, su
 			}
 		}
 
-		// 2. Fallback：使用系統指令
 		if !res.success {
-			// [修正] 加入 Context 控制超時，避免 Linux 下 ping 卡死導致 UI 不更新
 			ctx, cancel := context.WithTimeout(context.Background(), interval)
-			
 			var cmd *exec.Cmd
 			timeoutMs := strconv.Itoa(int(interval.Milliseconds()))
 			if runtime.GOOS == "windows" {
@@ -197,7 +250,7 @@ func deviceWorker(idx int, ip string, interval time.Duration, jitter float64, su
 				cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "1", ip)
 			}
 			out, _ := cmd.CombinedOutput()
-			cancel() // 釋放 Context 資源
+			cancel()
 
 			rtt, isSuccess := parseRTT(string(out))
 			res.rtt = rtt
@@ -205,17 +258,14 @@ func deviceWorker(idx int, ip string, interval time.Duration, jitter float64, su
 			res.isNative = false
 		}
 
-		// 把結果傳回給 UI
 		sub <- res
 
-		// [修正] 計算 Ping 操作的耗時，從等待時間中扣除，避免「時間偏移」
 		elapsed := time.Since(start)
 		baseWait := float64(interval) - float64(elapsed)
 		if baseWait < 0 {
-			baseWait = 0 // 如果 Ping 花了太久，下一次就不用等了
+			baseWait = 0
 		}
 
-		// 加上 Jitter 進行下一次等待
 		jit := jitter
 		if jit <= 0 {
 			jit = 0.1
@@ -225,11 +275,11 @@ func deviceWorker(idx int, ip string, interval time.Duration, jitter float64, su
 	}
 }
 
+// ... parseRTT 保持不變 ...
 func parseRTT(out string) (float64, bool) {
 	keys := []string{"time=", "time<", "時間=", "時間<"}
 	var start int = -1
 	var matchKey string
-
 	for _, k := range keys {
 		start = strings.Index(out, k)
 		if start != -1 {
@@ -237,17 +287,14 @@ func parseRTT(out string) (float64, bool) {
 			break
 		}
 	}
-
 	if start == -1 {
 		return 0, false
 	}
-
 	sub := out[start+len(matchKey):]
 	end := strings.Index(sub, "ms")
 	if end == -1 {
 		return 0, false
 	}
-
 	timeStr := strings.TrimSpace(sub[:end])
 	res, err := strconv.ParseFloat(timeStr, 64)
 	if err != nil {
@@ -260,11 +307,8 @@ func parseRTT(out string) (float64, bool) {
 // Bubbletea UI 渲染與事件更新
 // ---------------------------------------------------------
 
-// 監聽背景 Channel 的持續指令
 func listenForMsg(sub chan tea.Msg) tea.Cmd {
-	return func() tea.Msg {
-		return <-sub
-	}
+	return func() tea.Msg { return <-sub }
 }
 
 func (m model) Init() tea.Cmd {
@@ -285,24 +329,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if itv == 0 {
 			itv = 2 * time.Second
 		}
-		// 啟動所有設備的專屬背景工人
 		for i, d := range m.devices {
 			if d.Name != "---" {
-				go deviceWorker(i, d.IP, itv, m.cfg.Jitter, m.sub)
+				d.Loading = true // [標記] 剛啟動時顯示 Loading 狀態，表示正在解析 DNS
+				go resolveAndStartWorker(i, d.Name, d.IP, itv, m.cfg.Jitter, m.sub)
 			}
 		}
-		// 開始監聽回報
+		return m, listenForMsg(m.sub)
+
+	// [接收] 收到 DNS 解析完成的訊息，更新設備的名稱與 IP
+	case dnsResMsg:
+		d := m.devices[msg.idx]
+		d.Name = msg.name
+		d.IP = msg.ip
+		d.IsDNSFail = msg.isFail
+		if msg.isFail {
+			d.Loading = false // 如果解析失敗，就取消 Loading 狀態
+		}
 		return m, listenForMsg(m.sub)
 
 	case pingStartMsg:
 		m.devices[msg.idx].Loading = true
-		return m, listenForMsg(m.sub) // 繼續監聽下一個事件
+		return m, listenForMsg(m.sub)
 
 	case pingResMsg:
 		d := m.devices[msg.idx]
 		d.Loading, d.IsNative = false, msg.isNative
 		d.UpdateStats(msg.rtt, msg.success)
-		return m, listenForMsg(m.sub) // 繼續監聽下一個事件
+		return m, listenForMsg(m.sub)
 	}
 	return m, nil
 }
@@ -313,57 +367,43 @@ func (m model) View() string {
 	}
 	var s strings.Builder
 
-	// 1. 標題與副標題 (維持動態置中)
 	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render("go-deadman")) + "\n")
 	subTitle := fmt.Sprintf("From: %s | Version: %s | 顯示: Log+Avg 圖表", m.hostname, VERSION)
 	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, dimStyle.Render(subTitle)) + "\n")
 
-	// 【寬度計算邏輯】
-	// 固定欄位寬度加總：指示器(2) + Name(16) + IP(16) + Loss(6) + RTT(8) + AVG(8) + SNT(7) = 63 字元
 	const fixedColsWidth = 63
-	
-	// 計算剩餘可給圖表的寬度
 	maxHist := m.width - fixedColsWidth
 	if maxHist > HIST_SIZE {
-		maxHist = HIST_SIZE // 最高不超過 config 定義的紀錄上限
+		maxHist = HIST_SIZE
 	} else if maxHist < 5 {
-		maxHist = 5 // 給一個極小值的防呆，避免視窗太窄時破圖
+		maxHist = 5
 	}
 
-	// 計算分隔線寬度 (最少 80，不然會很醜)
 	sepWidth := m.width
 	if sepWidth < 80 {
 		sepWidth = 80
 	}
 
-	// 2. 表頭【動態適配】
-	// 將 LOG-STATUS 的寬度改為動態分配
 	header := fmt.Sprintf("\n  %-15s %-15s %5s %7s %7s %6s  %-*s", 
 		"HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "SNT", maxHist, "LOG-STATUS")
 	s.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(strings.Repeat("─", sepWidth)) + "\n")
 
 	for _, d := range m.devices {
 		if d.Name == "---" {
-			// 無效設備的佔位符也改為動態長度
 			s.WriteString(dimStyle.Render("  " + strings.Repeat("-", sepWidth-2)) + "\n")
 			continue
 		}
 
-		// 資料列的指示器
 		indicator := "  "
 		if d.Loading {
 			indicator = arrowStyle.Render("> ")
 		}
 
 		var hist strings.Builder
-		
-		// 3. 圖表【動態適配】：
-		// 根據計算出的 maxHist 來決定要印出多少筆歷史紀錄
 		showCount := d.HistCount
 		if showCount > maxHist {
 			showCount = maxHist
 		}
-
 		for j := 1; j <= showCount; j++ {
 			h := d.History[(d.HistoryIdx-j+HIST_SIZE)%HIST_SIZE]
 			if h.Success {
@@ -378,17 +418,28 @@ func (m model) View() string {
 			tag = "*"
 		}
 
-		// 4. 資料列
+		// [優化] 當還在解析 DNS 時，可能 Name 或是 IP 還是空的，我們給個佔位符確保版面不跑掉
+		displayName := d.Name
+		if displayName == "" {
+			displayName = "resolving..."
+		}
+		displayIP := d.IP
+		if displayIP == "" {
+			displayIP = "resolving..."
+		}
+
 		line := fmt.Sprintf("%-15s %-15s %4d%% %7.1f %7.1f %5d%s  ", 
-			d.Name, d.IP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt, tag)
+			displayName, displayIP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt, tag)
 
 		s.WriteString(indicator)
-		if d.HistCount > 0 && !d.History[(d.HistoryIdx-1+HIST_SIZE)%HIST_SIZE].Success {
-			s.WriteString(failRowStyle.Render(line))
+
+		if d.IsDNSFail {
+			s.WriteString(failRowStyle.Render(line) + downStyle.Render("DNS RESOLVE FAILED\n"))
+		} else if d.HistCount > 0 && !d.History[(d.HistoryIdx-1+HIST_SIZE)%HIST_SIZE].Success {
+			s.WriteString(failRowStyle.Render(line) + hist.String() + "\n")
 		} else {
-			s.WriteString(line)
+			s.WriteString(line + hist.String() + "\n")
 		}
-		s.WriteString(hist.String() + "\n")
 	}
 
 	footer := fmt.Sprintf("\n Interval: %s | Jitter: %.f%% | *: Native | Window: %d", 
@@ -402,12 +453,10 @@ func (m model) View() string {
 // ---------------------------------------------------------
 
 func main() {
-	// [修正] 初始化隨機數種子 (相容 Go 1.20 以下版本，確保 Jitter 是真正的隨機)
 	rand.Seed(time.Now().UnixNano())
 
 	var cfg Config
 	err := yaml.Unmarshal(embeddedYaml, &cfg)
-	// [修正] 接住並處理設定檔讀取失敗的狀況，避免靜默錯誤
 	if err != nil {
 		fmt.Printf("讀取設定檔 config.yaml 失敗: %v\n", err)
 		os.Exit(1)
@@ -421,8 +470,6 @@ func main() {
 	}
 
 	hostname, _ := os.Hostname()
-	
-	// 初始化 Channel (帶有緩衝區以防短暫高峰)
 	subChan := make(chan tea.Msg, 1000)
 
 	p := tea.NewProgram(model{
