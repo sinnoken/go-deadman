@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context" // [新增] 用於控制備用系統指令的超時
 	_ "embed"
 	"fmt"
 	"math"
@@ -26,7 +27,7 @@ var embeddedYaml []byte
 // ---------------------------------------------------------
 
 const (
-	VERSION     = "v1.8.0" // 背景多執行緒架構升級
+	VERSION     = "v1.8.1" // 修正潛在邏輯隱患與時間偏移
 	HIST_SIZE   = 30       // 歷史紀錄長度
 	WINDOW_SIZE = 50       // Moving Average 的樣本數
 )
@@ -153,6 +154,8 @@ func deviceWorker(idx int, ip string, interval time.Duration, jitter float64, su
 	time.Sleep(offset)
 
 	for {
+		start := time.Now() // [修正] 記錄開始時間，用以計算耗時
+
 		// 通知 UI 開始測量 (顯示 > 箭頭)
 		sub <- pingStartMsg{idx: idx}
 
@@ -183,14 +186,18 @@ func deviceWorker(idx int, ip string, interval time.Duration, jitter float64, su
 
 		// 2. Fallback：使用系統指令
 		if !res.success {
+			// [修正] 加入 Context 控制超時，避免 Linux 下 ping 卡死導致 UI 不更新
+			ctx, cancel := context.WithTimeout(context.Background(), interval)
+			
 			var cmd *exec.Cmd
 			timeoutMs := strconv.Itoa(int(interval.Milliseconds()))
 			if runtime.GOOS == "windows" {
-				cmd = exec.Command("ping", "-n", "1", "-w", timeoutMs, ip)
+				cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", timeoutMs, ip)
 			} else {
-				cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
+				cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "1", ip)
 			}
 			out, _ := cmd.CombinedOutput()
+			cancel() // 釋放 Context 資源
 
 			rtt, isSuccess := parseRTT(string(out))
 			res.rtt = rtt
@@ -201,12 +208,19 @@ func deviceWorker(idx int, ip string, interval time.Duration, jitter float64, su
 		// 把結果傳回給 UI
 		sub <- res
 
+		// [修正] 計算 Ping 操作的耗時，從等待時間中扣除，避免「時間偏移」
+		elapsed := time.Since(start)
+		baseWait := float64(interval) - float64(elapsed)
+		if baseWait < 0 {
+			baseWait = 0 // 如果 Ping 花了太久，下一次就不用等了
+		}
+
 		// 加上 Jitter 進行下一次等待
 		jit := jitter
 		if jit <= 0 {
 			jit = 0.1
 		}
-		nextWait := time.Duration(float64(interval) * (1 + (rand.Float64()*2 - 1)*jit))
+		nextWait := time.Duration(baseWait * (1 + (rand.Float64()*2 - 1)*jit))
 		time.Sleep(nextWait)
 	}
 }
@@ -388,8 +402,16 @@ func (m model) View() string {
 // ---------------------------------------------------------
 
 func main() {
+	// [修正] 初始化隨機數種子 (相容 Go 1.20 以下版本，確保 Jitter 是真正的隨機)
+	rand.Seed(time.Now().UnixNano())
+
 	var cfg Config
-	_ = yaml.Unmarshal(embeddedYaml, &cfg)
+	err := yaml.Unmarshal(embeddedYaml, &cfg)
+	// [修正] 接住並處理設定檔讀取失敗的狀況，避免靜默錯誤
+	if err != nil {
+		fmt.Printf("讀取設定檔 config.yaml 失敗: %v\n", err)
+		os.Exit(1)
+	}
 
 	if cfg.Interval == "" {
 		cfg.Interval = "1s"
