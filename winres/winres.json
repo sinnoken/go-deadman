@@ -4,31 +4,11 @@
       "0": "icon.png"
     }
   },
-  "RT_VERSION": {
-    "vars": {
-      "version": "1.9.1.0"
-    },
-    "fixed": {
-      "file_version": "{version}",
-      "product_version": "{version}"
-    },
-    "info": {
-      "0409": {
-        "FileDescription": "go-deadman Monitor",
-        "FileVersion": "{version}",
-        "InternalName": "go-deadman",
-        "OriginalFilename": "go-deadman.exe",
-        "ProductName": "go-deadman",
-        "ProductVersion": "{version}"
-      }
-    }
-  },
   "RT_MANIFEST": {
     "identity": {
       "name": "GoDeadman",
-      "version": "{version}"
+      "version": "1.9.1.0"
     },
-    "execution_level": "asInvoker",
-    "compatibility": ["Vista", "7", "8", "8.1", "10", "11"]
+    "execution_level": "asInvoker"
   }
 }
