@@ -294,69 +294,93 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-    if m.height == 0 {
-        return " Loading..."
-    }
-    var s strings.Builder
-    
-    // 1. 標題與副標題
-    s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render("NETWORK MONITOR")) + "\n")
-    subTitle := fmt.Sprintf("From: %s | Version: %s | 顯示: Log+Avg 圖表", m.hostname, VERSION)
-    s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, dimStyle.Render(subTitle)) + "\n")
+	if m.height == 0 || m.width == 0 {
+		return " Loading..."
+	}
+	var s strings.Builder
 
-    // 2. 表頭【對齊修正】：
-    // 最前面加上 2 個空白，用來對齊下方資料列的指示器 ("> " 或 "  ")
-    // SNT 欄位設為 %6s，剛好對齊底下的次數 + 星號 (如 "   12*")
-    header := fmt.Sprintf("\n  %-15s %-15s %5s %7s %7s %6s  %-20s", "HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "SNT", "LOG-STATUS")
-    s.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(strings.Repeat("─", 85)) + "\n")
+	// 1. 標題與副標題 (維持動態置中)
+	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render("NETWORK MONITOR")) + "\n")
+	subTitle := fmt.Sprintf("From: %s | Version: %s | 顯示: Log+Avg 圖表", m.hostname, VERSION)
+	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, dimStyle.Render(subTitle)) + "\n")
 
-    for _, d := range m.devices {
-        if d.Name == "---" {
-            s.WriteString(dimStyle.Render("  " + strings.Repeat("-", 80)) + "\n")
-            continue
-        }
-        
-        // 資料列的指示器 (佔 2 個字元，這就是為什麼表頭前面要加 2 個空白)
-        indicator := "  "
-        if d.Loading {
-            indicator = arrowStyle.Render("> ")
-        }
+	// 【寬度計算邏輯】
+	// 固定欄位寬度加總：指示器(2) + Name(16) + IP(16) + Loss(6) + RTT(8) + AVG(8) + SNT(7) = 63 字元
+	const fixedColsWidth = 63
+	
+	// 計算剩餘可給圖表的寬度
+	maxHist := m.width - fixedColsWidth
+	if maxHist > HIST_SIZE {
+		maxHist = HIST_SIZE // 最高不超過 config 定義的紀錄上限
+	} else if maxHist < 5 {
+		maxHist = 5 // 給一個極小值的防呆，避免視窗太窄時破圖
+	}
 
-        var hist strings.Builder
-        // 3. 圖表【維持最新在左邊】：
-        // 從 j=1 開始往回抓，確保最新的一筆印在最左側
-        for j := 1; j <= d.HistCount; j++ {
-            h := d.History[(d.HistoryIdx-j+HIST_SIZE)%HIST_SIZE]
-            if h.Success {
-                hist.WriteString(upStyle.Render(h.Char))
-            } else {
-                hist.WriteString(downStyle.Render(h.Char))
-            }
-        }
+	// 計算分隔線寬度 (最少 80，不然會很醜)
+	sepWidth := m.width
+	if sepWidth < 80 {
+		sepWidth = 80
+	}
 
-        tag := " "
-        if d.IsNative {
-            tag = "*"
-        }
-        
-        // 4. 資料列【對齊修正】：
-        // %4d%% (5字元) 對齊 %5s
-        // %7.1f (7字元) 對齊 %7s
-        // %5d%s (6字元) 對齊 %6s
-        line := fmt.Sprintf("%-15s %-15s %4d%% %7.1f %7.1f %5d%s  ", d.Name, d.IP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt, tag)
+	// 2. 表頭【動態適配】
+	// 將 LOG-STATUS 的寬度改為動態分配
+	header := fmt.Sprintf("\n  %-15s %-15s %5s %7s %7s %6s  %-*s", 
+		"HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "SNT", maxHist, "LOG-STATUS")
+	s.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(strings.Repeat("─", sepWidth)) + "\n")
 
-        s.WriteString(indicator)
-        if d.HistCount > 0 && !d.History[(d.HistoryIdx-1+HIST_SIZE)%HIST_SIZE].Success {
-            s.WriteString(failRowStyle.Render(line))
-        } else {
-            s.WriteString(line)
-        }
-        s.WriteString(hist.String() + "\n")
-    }
+	for _, d := range m.devices {
+		if d.Name == "---" {
+			// 無效設備的佔位符也改為動態長度
+			s.WriteString(dimStyle.Render("  " + strings.Repeat("-", sepWidth-2)) + "\n")
+			continue
+		}
 
-    footer := fmt.Sprintf("\n Interval: %s | Jitter: %.f%% | *: Native | Window: %d", m.cfg.Interval, m.cfg.Jitter*100, WINDOW_SIZE)
-    s.WriteString(dimStyle.Render(footer))
-    return s.String()
+		// 資料列的指示器
+		indicator := "  "
+		if d.Loading {
+			indicator = arrowStyle.Render("> ")
+		}
+
+		var hist strings.Builder
+		
+		// 3. 圖表【動態適配】：
+		// 根據計算出的 maxHist 來決定要印出多少筆歷史紀錄
+		showCount := d.HistCount
+		if showCount > maxHist {
+			showCount = maxHist
+		}
+
+		for j := 1; j <= showCount; j++ {
+			h := d.History[(d.HistoryIdx-j+HIST_SIZE)%HIST_SIZE]
+			if h.Success {
+				hist.WriteString(upStyle.Render(h.Char))
+			} else {
+				hist.WriteString(downStyle.Render(h.Char))
+			}
+		}
+
+		tag := " "
+		if d.IsNative {
+			tag = "*"
+		}
+
+		// 4. 資料列
+		line := fmt.Sprintf("%-15s %-15s %4d%% %7.1f %7.1f %5d%s  ", 
+			d.Name, d.IP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt, tag)
+
+		s.WriteString(indicator)
+		if d.HistCount > 0 && !d.History[(d.HistoryIdx-1+HIST_SIZE)%HIST_SIZE].Success {
+			s.WriteString(failRowStyle.Render(line))
+		} else {
+			s.WriteString(line)
+		}
+		s.WriteString(hist.String() + "\n")
+	}
+
+	footer := fmt.Sprintf("\n Interval: %s | Jitter: %.f%% | *: Native | Window: %d", 
+		m.cfg.Interval, m.cfg.Jitter*100, WINDOW_SIZE)
+	s.WriteString(dimStyle.Render(footer))
+	return s.String()
 }
 
 // ---------------------------------------------------------
