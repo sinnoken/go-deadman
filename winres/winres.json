@@ -1,11 +1,9 @@
 {
-  "vars": {
-    "version": "1.9.1.0"
-  },
   "RT_GROUP_ICON": {
     "APP": {
       "0000": [
-        "icon.png"
+        "icon.png",
+        "icon16.png"
       ]
     }
   },
@@ -13,10 +11,10 @@
     "#1": {
       "0409": {
         "identity": {
-          "name": "GoDeadman",
-          "version": "{version}"
+          "name": "",
+          "version": "1.9.1.0"
         },
-        "description": "Network latency and jitter monitor with TUI.",
+        "description": "go-deadman",
         "minimum-os": "win7",
         "execution-level": "as invoker",
         "ui-access": false,
@@ -26,7 +24,7 @@
         "disable-window-filtering": false,
         "high-resolution-scrolling-aware": false,
         "ultra-high-resolution-scrolling-aware": false,
-        "long-path-aware": true,
+        "long-path-aware": false,
         "printer-driver-isolation": false,
         "gdi-scaling": false,
         "segment-heap": false,
@@ -43,17 +41,17 @@
         },
         "info": {
           "0409": {
-            "Comments": "TUI Network Monitoring Tool",
-            "CompanyName": "go-deadman Open Source",
+            "Comments": "go-deadman",
+            "CompanyName": "go-deadman",
             "FileDescription": "go-deadman Monitor",
             "FileVersion": "{version}",
             "InternalName": "go-deadman",
-            "LegalCopyright": "Copyright (c) 2026",
-            "LegalTrademarks": "",
-            "OriginalFilename": "go-deadman.exe",
+            "LegalCopyright": "go-deadman",
+            "LegalTrademarks": "go-deadman",
+            "OriginalFilename": "go-deadman",
             "PrivateBuild": "",
             "ProductName": "go-deadman",
-            "ProductVersion": "{version}",
+            "ProductVersion": "",
             "SpecialBuild": ""
           }
         }
