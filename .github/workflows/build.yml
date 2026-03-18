@@ -40,6 +40,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: 'stable'
+          cache: false
   
       - name: Initialize & Install Dependencies
         run: |
@@ -47,6 +48,7 @@ jobs:
             go mod init go-deadman
           fi
           go mod tidy
+          go mod download
       
       # --- 新增步驟：處理設定檔 ---
       - name: Prepare Configuration
