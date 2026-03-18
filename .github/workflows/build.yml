@@ -75,10 +75,6 @@ jobs:
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
           go build -ldflags="-s -w" -trimpath -o "$BINARY_NAME" .
           
-          if [ "${{ matrix.goos }}" = "windows" ] && [ "${{ matrix.goarch }}" = "amd64" ]; then
-            sudo apt-get update && sudo apt-get install -y upx
-            upx --best "$BINARY_NAME"
-          fi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v6

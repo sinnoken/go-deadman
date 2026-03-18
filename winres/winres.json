@@ -1,7 +1,7 @@
 {
   "RT_GROUP_ICON": {
     "main": {
-      "0": "icon.png" 
+      "0": "icon.png"
     }
   },
   "RT_VERSION": {
@@ -14,12 +14,9 @@
     },
     "info": {
       "0409": {
-        "Comments": "Network monitoring tool with TUI",
-        "CompanyName": "YourName Studio",
-        "FileDescription": "go-deadman Network Monitor",
+        "FileDescription": "go-deadman Monitor",
         "FileVersion": "{version}",
         "InternalName": "go-deadman",
-        "LegalCopyright": "Copyright (c) 2026",
         "OriginalFilename": "go-deadman.exe",
         "ProductName": "go-deadman",
         "ProductVersion": "{version}"
@@ -28,10 +25,9 @@
   },
   "RT_MANIFEST": {
     "identity": {
-      "name": "YourName.GoDeadman",
+      "name": "GoDeadman",
       "version": "{version}"
     },
-    "description": "Network latency and jitter monitor.",
     "execution_level": "asInvoker",
     "compatibility": ["Vista", "7", "8", "8.1", "10", "11"]
   }
