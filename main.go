@@ -28,7 +28,7 @@ var embeddedYaml []byte
 // ---------------------------------------------------------
 
 const (
-	VERSION     = "v1.9.0" // 非同步 DNS 解析架構升級
+	VERSION     = "v1.9.1" // 新增 Jitter 計算
 	HIST_SIZE   = 30
 	WINDOW_SIZE = 50
 )
@@ -59,6 +59,7 @@ type Device struct {
 	Snt        int
 	LastRTT    float64
 	AvgRTT     float64
+	Jitter     float64 // [新增] 網路延遲抖動
 	Window     []float64
 	LossRate   int
 	History    [HIST_SIZE]Heartbeat
@@ -94,7 +95,6 @@ type pingResMsg struct {
 	isNative bool
 }
 
-// [新增] DNS 解析完成的訊息回傳
 type dnsResMsg struct {
 	idx    int
 	name   string
@@ -148,11 +148,24 @@ func (d *Device) UpdateStats(rtt float64, success bool) {
 		if len(d.Window) > WINDOW_SIZE {
 			d.Window = d.Window[1:]
 		}
+		
+		// 1. 計算平均延遲
 		var sum float64
 		for _, v := range d.Window {
 			sum += v
 		}
 		d.AvgRTT = sum / float64(len(d.Window))
+
+		// 2. [新增] 計算 Jitter (相鄰 RTT 絕對誤差的平均)
+		if len(d.Window) >= 2 {
+			var jitterSum float64
+			for i := 1; i < len(d.Window); i++ {
+				jitterSum += math.Abs(d.Window[i] - d.Window[i-1])
+			}
+			d.Jitter = jitterSum / float64(len(d.Window)-1)
+		} else {
+			d.Jitter = 0.0 // 資料不夠時預設為 0
+		}
 	}
 	d.LossRate = (d.Loss * 100) / d.Snt
 
@@ -168,7 +181,6 @@ func (d *Device) UpdateStats(rtt float64, success bool) {
 // 網路層邏輯：獨立背景執行緒 (Goroutine Worker)
 // ---------------------------------------------------------
 
-// [新增] 負責處理 DNS 並接續啟動 Ping 的統籌 Worker
 func resolveAndStartWorker(idx int, rawName, rawIP string, interval time.Duration, jitter float64, sub chan<- tea.Msg) {
 	name := strings.TrimSpace(rawName)
 	ip := strings.TrimSpace(rawIP)
@@ -275,7 +287,6 @@ func deviceWorker(idx int, ip string, interval time.Duration, jitter float64, su
 	}
 }
 
-// ... parseRTT 保持不變 ...
 func parseRTT(out string) (float64, bool) {
 	keys := []string{"time=", "time<", "時間=", "時間<"}
 	var start int = -1
@@ -331,20 +342,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		for i, d := range m.devices {
 			if d.Name != "---" {
-				d.Loading = true // [標記] 剛啟動時顯示 Loading 狀態，表示正在解析 DNS
+				d.Loading = true
 				go resolveAndStartWorker(i, d.Name, d.IP, itv, m.cfg.Jitter, m.sub)
 			}
 		}
 		return m, listenForMsg(m.sub)
 
-	// [接收] 收到 DNS 解析完成的訊息，更新設備的名稱與 IP
 	case dnsResMsg:
 		d := m.devices[msg.idx]
 		d.Name = msg.name
 		d.IP = msg.ip
 		d.IsDNSFail = msg.isFail
 		if msg.isFail {
-			d.Loading = false // 如果解析失敗，就取消 Loading 狀態
+			d.Loading = false
 		}
 		return m, listenForMsg(m.sub)
 
@@ -371,7 +381,8 @@ func (m model) View() string {
 	subTitle := fmt.Sprintf("From: %s | Version: %s | 顯示: Log+Avg 圖表", m.hostname, VERSION)
 	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, dimStyle.Render(subTitle)) + "\n")
 
-	const fixedColsWidth = 63
+	// [修改] 寬度增加以容納 Jitter 欄位
+	const fixedColsWidth = 72
 	maxHist := m.width - fixedColsWidth
 	if maxHist > HIST_SIZE {
 		maxHist = HIST_SIZE
@@ -380,12 +391,13 @@ func (m model) View() string {
 	}
 
 	sepWidth := m.width
-	if sepWidth < 80 {
-		sepWidth = 80
+	if sepWidth < 85 {
+		sepWidth = 85
 	}
 
-	header := fmt.Sprintf("\n  %-15s %-15s %5s %7s %7s %6s  %-*s", 
-		"HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "SNT", maxHist, "LOG-STATUS")
+	// [修改] 表頭加入 JIT(ms)
+	header := fmt.Sprintf("\n  %-15s %-15s %5s %7s %7s %7s %6s  %-*s", 
+		"HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "JIT(ms)", "SNT", maxHist, "LOG-STATUS")
 	s.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(strings.Repeat("─", sepWidth)) + "\n")
 
 	for _, d := range m.devices {
@@ -418,7 +430,6 @@ func (m model) View() string {
 			tag = "*"
 		}
 
-		// [優化] 當還在解析 DNS 時，可能 Name 或是 IP 還是空的，我們給個佔位符確保版面不跑掉
 		displayName := d.Name
 		if displayName == "" {
 			displayName = "resolving..."
@@ -428,8 +439,9 @@ func (m model) View() string {
 			displayIP = "resolving..."
 		}
 
-		line := fmt.Sprintf("%-15s %-15s %4d%% %7.1f %7.1f %5d%s  ", 
-			displayName, displayIP, d.LossRate, d.LastRTT, d.AvgRTT, d.Snt, tag)
+		// [修改] 排版加入 d.Jitter
+		line := fmt.Sprintf("%-15s %-15s %4d%% %7.1f %7.1f %7.1f %5d%s  ", 
+			displayName, displayIP, d.LossRate, d.LastRTT, d.AvgRTT, d.Jitter, d.Snt, tag)
 
 		s.WriteString(indicator)
 
@@ -442,7 +454,7 @@ func (m model) View() string {
 		}
 	}
 
-	footer := fmt.Sprintf("\n Interval: %s | Jitter: %.f%% | *: Native | Window: %d", 
+	footer := fmt.Sprintf("\n Interval: %s | App Jitter: %.f%% | *: Native | Window: %d", 
 		m.cfg.Interval, m.cfg.Jitter*100, WINDOW_SIZE)
 	s.WriteString(dimStyle.Render(footer))
 	return s.String()
