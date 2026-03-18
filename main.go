@@ -1,5 +1,8 @@
 package main
 
+// 加入這行自動化指令
+//go:generate go-winres make
+
 import (
 	"context"
 	_ "embed"
