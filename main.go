@@ -1,5 +1,6 @@
 package main
 
+// 加入這行自動化指令
 //go:generate go-winres make
 
 import (
@@ -30,10 +31,9 @@ var embeddedYaml []byte
 // ---------------------------------------------------------
 
 const (
-	VERSION           = "v2.0.0-pro" // 精度優化版
-	HIST_SIZE         = 30
-	WINDOW_SIZE       = 50
-	UI_TICK_INTERVAL  = 50 * time.Millisecond // UI 刷新頻率 (20 FPS)
+	VERSION     = "v1.9.1" // 新增 Jitter 計算
+	HIST_SIZE   = 30
+	WINDOW_SIZE = 50
 )
 
 var (
@@ -62,7 +62,7 @@ type Device struct {
 	Snt        int
 	LastRTT    float64
 	AvgRTT     float64
-	Jitter     float64
+	Jitter     float64 // [新增] 網路延遲抖動
 	Window     []float64
 	LossRate   int
 	History    [HIST_SIZE]Heartbeat
@@ -71,7 +71,6 @@ type Device struct {
 	Loading    bool
 	IsNative   bool
 	IsDNSFail  bool
-	LastChar   string // 預計算的視覺化字元
 }
 
 type Config struct {
@@ -91,7 +90,6 @@ type model struct {
 
 // Bubbletea 訊息類型
 type initMsg struct{}
-type tickMsg struct{} // UI 定時刷新
 type pingStartMsg struct{ idx int }
 type pingResMsg struct {
 	idx      int
@@ -99,6 +97,7 @@ type pingResMsg struct {
 	success  bool
 	isNative bool
 }
+
 type dnsResMsg struct {
 	idx    int
 	name   string
@@ -107,10 +106,22 @@ type dnsResMsg struct {
 }
 
 // ---------------------------------------------------------
-// 核心演算法：狀態更新與預計算
+// 輔助函式：字串截斷
 // ---------------------------------------------------------
 
-func calculateLogChar(rtt, avg float64, success bool) string {
+func truncate(s string, maxLen int) string {
+	r := []rune(s)
+	if len(r) > maxLen {
+		return string(r[:maxLen-2]) + ".."
+	}
+	return s
+}
+
+// ---------------------------------------------------------
+// 核心演算法：狀態更新與視覺化
+// ---------------------------------------------------------
+
+func getLogChar(rtt, avg float64, success bool) string {
 	if !success || rtt <= 0 {
 		return "·"
 	}
@@ -134,7 +145,6 @@ func (d *Device) UpdateStats(rtt float64, success bool) {
 	d.Snt++
 	if !success {
 		d.Loss++
-		d.LastChar = "·"
 	} else {
 		d.LastRTT = rtt
 		d.Window = append(d.Window, rtt)
@@ -142,105 +152,31 @@ func (d *Device) UpdateStats(rtt float64, success bool) {
 			d.Window = d.Window[1:]
 		}
 		
+		// 1. 計算平均延遲
 		var sum float64
 		for _, v := range d.Window {
 			sum += v
 		}
 		d.AvgRTT = sum / float64(len(d.Window))
 
+		// 2. [新增] 計算 Jitter (相鄰 RTT 絕對誤差的平均)
 		if len(d.Window) >= 2 {
 			var jitterSum float64
 			for i := 1; i < len(d.Window); i++ {
 				jitterSum += math.Abs(d.Window[i] - d.Window[i-1])
 			}
 			d.Jitter = jitterSum / float64(len(d.Window)-1)
+		} else {
+			d.Jitter = 0.0 // 資料不夠時預設為 0
 		}
-		d.LastChar = calculateLogChar(rtt, d.AvgRTT, success)
 	}
 	d.LossRate = (d.Loss * 100) / d.Snt
-	d.History[d.HistoryIdx] = Heartbeat{Char: d.LastChar, Success: success}
+
+	char := getLogChar(rtt, d.AvgRTT, success)
+	d.History[d.HistoryIdx] = Heartbeat{Char: char, Success: success}
 	d.HistoryIdx = (d.HistoryIdx + 1) % HIST_SIZE
 	if d.HistCount < HIST_SIZE {
 		d.HistCount++
-	}
-}
-
-// ---------------------------------------------------------
-// 網路層：高效能長駐 Worker (微秒優化)
-// ---------------------------------------------------------
-
-func deviceWorker(idx int, ip string, interval time.Duration, jitter float64, sub chan<- tea.Msg) {
-	// [優化] 鎖定 OS 執行緒，減少 CPU 調度造成的微秒抖動
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	// 隨機初始偏移，避免所有設備同時發送
-	time.Sleep(time.Duration(rand.Float64() * float64(interval)))
-
-	// [優化] 物件重用：嘗試建立長駐型 Pinger (Raw Socket)
-	pinger, err := probing.NewPinger(ip)
-	if err == nil {
-		pinger.Interval = interval
-		pinger.Jitter = true // 讓套件處理隨機抖動
-		
-		// Windows 或有權限的 Linux 預設使用特權模式 (Raw Socket)
-		if runtime.GOOS == "windows" {
-			pinger.SetPrivileged(true)
-		} else {
-			// Linux 環境若要微秒精度，建議開啟 SetPrivileged(true) 並賦予 CAP_NET_RAW
-			pinger.SetPrivileged(false) 
-		}
-
-		pinger.OnSend = func(pkt *probing.Packet) {
-			sub <- pingStartMsg{idx: idx}
-		}
-
-		pinger.OnRecv = func(pkt *probing.Packet) {
-			sub <- pingResMsg{
-				idx:      idx,
-				rtt:      float64(pkt.Rtt.Microseconds()) / 1000.0, // 保留三位小數(微秒)
-				success:  true,
-				isNative: true,
-			}
-		}
-
-		// Run 會阻塞直到錯誤發生
-		if err := pinger.Run(); err != nil {
-			// 若長駐 Pinger 失敗，進入 Fallback 模式
-		}
-	}
-
-	// [相容性] Fallback 模式：傳統循環模式 (exec ping)
-	for {
-		start := time.Now()
-		sub <- pingStartMsg{idx: idx}
-
-		ctx, cancel := context.WithTimeout(context.Background(), interval)
-		timeoutMs := strconv.Itoa(int(interval.Milliseconds()))
-		var cmd *exec.Cmd
-		if runtime.GOOS == "windows" {
-			cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", timeoutMs, ip)
-		} else {
-			cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "1", ip)
-		}
-		out, _ := cmd.CombinedOutput()
-		cancel()
-
-		rtt, isSuccess := parseRTT(string(out))
-		sub <- pingResMsg{
-			idx:      idx,
-			rtt:      rtt,
-			success:  isSuccess,
-			isNative: false,
-		}
-
-		elapsed := time.Since(start)
-		wait := interval - elapsed
-		if wait < 0 { wait = 0 }
-		// 套用 Jitter 邏輯
-		jit := jitter
-		if jit <= 0 { jit = 0.1 }
-		time.Sleep(time.Duration(float64(wait) * (1 + (rand.Float64()*2-1)*jit)))
 	}
 }
 
@@ -289,6 +225,71 @@ func resolveAndStartWorker(idx int, rawName, rawIP string, interval time.Duratio
 	}
 }
 
+func deviceWorker(idx int, ip string, interval time.Duration, jitter float64, sub chan<- tea.Msg) {
+	offset := time.Duration(rand.Float64() * float64(interval))
+	time.Sleep(offset)
+
+	for {
+		start := time.Now()
+		sub <- pingStartMsg{idx: idx}
+
+		var res pingResMsg
+		res.idx = idx
+
+		pinger, err := probing.NewPinger(ip)
+		if err == nil {
+			pinger.Count = 1
+			pinger.Timeout = interval
+			if runtime.GOOS == "windows" {
+				pinger.SetPrivileged(true)
+			} else {
+				pinger.SetPrivileged(false)
+			}
+			if err = pinger.Run(); err == nil {
+				stats := pinger.Statistics()
+				if stats.PacketsRecv > 0 {
+					res.rtt = float64(stats.MaxRtt.Microseconds()) / 1000.0
+					res.success = true
+					res.isNative = true
+				}
+			}
+		}
+
+		if !res.success {
+			ctx, cancel := context.WithTimeout(context.Background(), interval)
+			var cmd *exec.Cmd
+			timeoutMs := strconv.Itoa(int(interval.Milliseconds()))
+			if runtime.GOOS == "windows" {
+				cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", timeoutMs, ip)
+			} else {
+				cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "1", ip)
+			}
+			out, _ := cmd.CombinedOutput()
+			cancel()
+
+			rtt, isSuccess := parseRTT(string(out))
+			res.rtt = rtt
+			res.success = isSuccess
+			res.isNative = false
+		}
+
+		sub <- res
+
+		elapsed := time.Since(start)
+		baseWait := float64(interval) - float64(elapsed)
+		if baseWait < 0 {
+			baseWait = 0
+		}
+
+		jit := jitter
+		if jit <= 0 {
+			jit = 0.1
+		}
+		nextWait := time.Duration(baseWait * (1 + (rand.Float64()*2 - 1)*jit))
+		time.Sleep(nextWait)
+	}
+}
+
 func parseRTT(out string) (float64, bool) {
 	keys := []string{"time=", "time<", "時間=", "時間<"}
 	var start int = -1
@@ -317,17 +318,15 @@ func parseRTT(out string) (float64, bool) {
 }
 
 // ---------------------------------------------------------
-// Bubbletea UI：頻率分離渲染
+// Bubbletea UI 渲染與事件更新
 // ---------------------------------------------------------
 
-func tick() tea.Cmd {
-	return tea.Tick(UI_TICK_INTERVAL, func(t time.Time) tea.Msg {
-		return tickMsg{}
-	})
+func listenForMsg(sub chan tea.Msg) tea.Cmd {
+	return func() tea.Msg { return <-sub }
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(func() tea.Msg { return initMsg{} }, tick())
+	return func() tea.Msg { return initMsg{} }
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -341,23 +340,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case initMsg:
 		itv, _ := time.ParseDuration(m.cfg.Interval)
-		if itv == 0 { itv = 1 * time.Second }
+		if itv == 0 {
+			itv = 2 * time.Second
+		}
 		for i, d := range m.devices {
 			if d.Name != "---" {
 				d.Loading = true
 				go resolveAndStartWorker(i, d.Name, d.IP, itv, m.cfg.Jitter, m.sub)
 			}
 		}
-		// 啟動訊息監聽
 		return m, listenForMsg(m.sub)
-
-	case tickMsg:
-		// 定時觸發渲染更新
-		return m, tick()
 
 	case dnsResMsg:
 		d := m.devices[msg.idx]
-		d.Name, d.IP, d.IsDNSFail = msg.name, msg.ip, msg.isFail
+		d.Name = msg.name
+		d.IP = msg.ip
+		d.IsDNSFail = msg.isFail
+		if msg.isFail {
+			d.Loading = false
+		}
 		return m, listenForMsg(m.sub)
 
 	case pingStartMsg:
@@ -368,7 +369,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		d := m.devices[msg.idx]
 		d.Loading, d.IsNative = false, msg.isNative
 		d.UpdateStats(msg.rtt, msg.success)
-		// 這裡繼續監聽下一則訊息，但不顯式觸發渲染(渲染交給 tickMsg)
 		return m, listenForMsg(m.sub)
 	}
 	return m, nil
@@ -380,50 +380,86 @@ func (m model) View() string {
 	}
 	var s strings.Builder
 
-	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render("GO-DEADMAN PRECISION")) + "\n")
-	subTitle := fmt.Sprintf("From: %s | Version: %s | Mode: High-Precision", m.hostname, VERSION)
+	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render("go-deadman")) + "\n")
+	subTitle := fmt.Sprintf("From: %s | Version: %s | 顯示: Log+Avg 圖表", m.hostname, VERSION)
 	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, dimStyle.Render(subTitle)) + "\n")
 
-	const fixedColsWidth = 84 // 增加寬度以容納更高的精度顯示
+	// [修改] 寬度增加以容納 Jitter 欄位
+	const fixedColsWidth = 72
 	maxHist := m.width - fixedColsWidth
-	if maxHist > HIST_SIZE { maxHist = HIST_SIZE } else if maxHist < 5 { maxHist = 5 }
+	if maxHist > HIST_SIZE {
+		maxHist = HIST_SIZE
+	} else if maxHist < 5 {
+		maxHist = 5
+	}
 
-	// 表頭顯示調整：RTT(ms) 空間拉大
-	header := fmt.Sprintf("\n  %-15s %-15s %5s %9s %9s %9s %6s  %-*s", 
-		"HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "JIT(ms)", "SNT", maxHist, "STATUS")
-	s.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(strings.Repeat("─", m.width)) + "\n")
+	sepWidth := m.width
+	if sepWidth < 85 {
+		sepWidth = 85
+	}
+
+	// [修改] 表頭加入 JIT(ms)
+	header := fmt.Sprintf("\n  %-15s %-15s %5s %7s %7s %7s %6s  %-*s", 
+		"HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "JIT(ms)", "SNT", maxHist, "LOG-STATUS")
+	s.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(strings.Repeat("─", sepWidth)) + "\n")
 
 	for _, d := range m.devices {
 		if d.Name == "---" {
-			s.WriteString(dimStyle.Render("  " + strings.Repeat("-", m.width-4)) + "\n")
+			s.WriteString(dimStyle.Render("  " + strings.Repeat("-", sepWidth-2)) + "\n")
 			continue
 		}
 
 		indicator := "  "
-		if d.Loading { indicator = arrowStyle.Render("> ") }
+		if d.Loading {
+			indicator = arrowStyle.Render("> ")
+		}
 
 		var hist strings.Builder
 		showCount := d.HistCount
-		if showCount > maxHist { showCount = maxHist }
+		if showCount > maxHist {
+			showCount = maxHist
+		}
 		for j := 1; j <= showCount; j++ {
 			h := d.History[(d.HistoryIdx-j+HIST_SIZE)%HIST_SIZE]
-			if h.Success { hist.WriteString(upStyle.Render(h.Char)) } else { hist.WriteString(downStyle.Render(h.Char)) }
+			if h.Success {
+				hist.WriteString(upStyle.Render(h.Char))
+			} else {
+				hist.WriteString(downStyle.Render(h.Char))
+			}
 		}
 
 		tag := " "
-		if d.IsNative { tag = "*" }
+		if d.IsNative {
+			tag = "*"
+		}
 
-		// [優化] 顯示精度改為 %.3f
-		line := fmt.Sprintf("%-15s %-15s %4d%% %9.3f %9.3f %9.3f %5d%s  ", 
-			truncate(d.Name, 15), truncate(d.IP, 15), d.LossRate, d.LastRTT, d.AvgRTT, d.Jitter, d.Snt, tag)
+		displayName := d.Name
+		if displayName == "" {
+			displayName = "resolving..."
+		}
+		displayIP := d.IP
+		if displayIP == "" {
+			displayIP = "resolving..."
+		}
+
+		// [修改] 排版加入 d.Jitter
+		line := fmt.Sprintf("%-15s %-15s %4d%% %7.1f %7.1f %7.1f %5d%s  ", 
+			displayName, displayIP, d.LossRate, d.LastRTT, d.AvgRTT, d.Jitter, d.Snt, tag)
 
 		s.WriteString(indicator)
+
 		if d.IsDNSFail {
-			s.WriteString(failRowStyle.Render(line) + "DNS FAIL\n")
+			s.WriteString(failRowStyle.Render(line) + downStyle.Render("DNS RESOLVE FAILED\n"))
+		} else if d.HistCount > 0 && !d.History[(d.HistoryIdx-1+HIST_SIZE)%HIST_SIZE].Success {
+			s.WriteString(failRowStyle.Render(line) + hist.String() + "\n")
 		} else {
 			s.WriteString(line + hist.String() + "\n")
 		}
 	}
+
+	footer := fmt.Sprintf("\n Interval: %s | App Jitter: %.f%% | *: Native | Window: %d", 
+		m.cfg.Interval, m.cfg.Jitter*100, WINDOW_SIZE)
+	s.WriteString(dimStyle.Render(footer))
 	return s.String()
 }
 
