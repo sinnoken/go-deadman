@@ -41,6 +41,12 @@ jobs:
         with:
           go-version: 'stable'
           cache: false
+
+      - name: Install and Run go-winres (Windows only)
+        if: matrix.goos == 'windows'
+        run: |
+          go install github.com/tc-hib/go-winres@latest
+          go-winres make
   
       - name: Initialize & Install Dependencies
         run: |
@@ -50,11 +56,7 @@ jobs:
           go mod tidy
           go mod download
 
-      - name: Install and Run go-winres (Windows only)
-        if: matrix.goos == 'windows'
-        run: |
-          go install github.com/tc-hib/go-winres@latest
-          go-winres make
+
 
       # --- 新增步驟：處理設定檔 ---
       - name: Prepare Configuration
