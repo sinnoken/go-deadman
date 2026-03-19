@@ -382,7 +382,7 @@ func fallbackWorker(d *Device, ip string, interval time.Duration, jitter float64
 
 func parseRTT(out string) (float64, bool) {
 	keys := []string{"time=", "time<", "時間=", "時間<"}
-	var start int = -1
+	start := -1
 	var matchKey string
 	for _, k := range keys {
 		start = strings.Index(out, k)
@@ -553,8 +553,7 @@ func (m model) View() string {
 // ---------------------------------------------------------
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
+	
 	var cfg Config
 	err := yaml.Unmarshal(embeddedYaml, &cfg)
 	if err != nil {
