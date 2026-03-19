@@ -217,7 +217,12 @@ func resolveAndStartWorker(d *Device, interval time.Duration, jitter float64) {
 func deviceWorker(d *Device, ip string, interval time.Duration, jitter float64) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-
+	
+	// [加回這裡] 初始啟動時間的 Jitter，打散各設備的併發起點
+	// 讓每個 Worker 隨機延遲 0 ~ interval 的時間再啟動
+	offset := time.Duration(rand.Float64() * float64(interval))
+	time.Sleep(offset)
+	
 	pinger, err := probing.NewPinger(ip)
 	if err != nil {
 		fallbackWorker(d, ip, interval, jitter)
@@ -486,4 +491,93 @@ func (m model) View() string {
 		avgRTT := d.AvgRTT
 		jitter := d.Jitter
 		snt := d.Snt
-		histCount
+		histCount := d.HistCount
+		histIdx := d.HistoryIdx
+		var historyCopy [HIST_SIZE]Heartbeat
+		copy(historyCopy[:], d.History[:])
+		d.mu.RUnlock()
+
+		indicator := "  "
+		if isLoading {
+			indicator = arrowStyle.Render("> ")
+		}
+
+		var hist strings.Builder
+		showCount := histCount
+		if showCount > maxHist {
+			showCount = maxHist
+		}
+		for j := 1; j <= showCount; j++ {
+			h := historyCopy[(histIdx-j+HIST_SIZE)%HIST_SIZE]
+			if h.Success {
+				hist.WriteString(upStyle.Render(h.Char))
+			} else {
+				hist.WriteString(downStyle.Render(h.Char))
+			}
+		}
+
+		tag := " "
+		if isNative {
+			tag = "*"
+		}
+
+		if displayName == "" {
+			displayName = "resolving..."
+		}
+		if displayIP == "" {
+			displayIP = "resolving..."
+		}
+
+		line := fmt.Sprintf("%-15s %-15s %4d%% %8.3f %8.3f %8.3f %5d%s  ",
+			displayName, displayIP, lossRate, lastRTT, avgRTT, jitter, snt, tag)
+
+		s.WriteString(indicator)
+
+		if isDNSFail {
+			s.WriteString(failRowStyle.Render(line) + downStyle.Render("DNS RESOLVE FAILED\n"))
+		} else if histCount > 0 && !historyCopy[(histIdx-1+HIST_SIZE)%HIST_SIZE].Success {
+			s.WriteString(failRowStyle.Render(line) + hist.String() + "\n")
+		} else {
+			s.WriteString(line + hist.String() + "\n")
+		}
+	}
+
+	footer := fmt.Sprintf("\n Interval: %s | App Jitter: %.f%% | *: Native | Window: %d",
+		m.cfg.Interval, m.cfg.Jitter*100, WINDOW_SIZE)
+	s.WriteString(dimStyle.Render(footer))
+	return s.String()
+}
+
+// ---------------------------------------------------------
+// 程式進入點
+// ---------------------------------------------------------
+
+func main() {
+	rand.Seed(time.Now().UnixNano())
+
+	var cfg Config
+	err := yaml.Unmarshal(embeddedYaml, &cfg)
+	if err != nil {
+		fmt.Printf("讀取設定檔 config.yaml 失敗: %v\n", err)
+		os.Exit(1)
+	}
+
+	if cfg.Interval == "" {
+		cfg.Interval = "1s"
+	}
+	if cfg.Jitter <= 0 {
+		cfg.Jitter = 0.1
+	}
+
+	hostname, _ := os.Hostname()
+
+	p := tea.NewProgram(model{
+		cfg:      cfg,
+		devices:  cfg.Devices,
+		hostname: hostname,
+	}, tea.WithAltScreen())
+
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Error running program: %v", err)
+	}
+}
