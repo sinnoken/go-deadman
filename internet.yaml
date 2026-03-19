@@ -1,90 +1,106 @@
 scale: 10
-interval: 2s
+interval: 1s
 devices:
   # --- 三大公雲 (Top 3 Public Clouds) ---
-  - name: "Google-Cloud-DNS"
-    ip: "8.8.8.8"
-  - name: "AWS-Global-Edge"
-    ip: "15.197.142.173"
-  - name: "Azure-Edge-Anycast"
-    ip: "13.107.21.200"     # [已更新] 改為 Azure Front Door Anycast IP (極穩定)
+  - name: "---"
+  # 使用 Anycast 邊緣 IP，能反映最近的雲端進入點延遲
+  - name: "Google-Global-DNS"
+    ip: "8.8.8.8"           # Google Public DNS (Anycast)
+  - name: "AWS-Global-Accelerator"
+    ip: "15.197.142.173"    # AWS 全球加速器節點 (非常穩定)
+  - name: "AWS-Static-Anycast"
+    ip: "99.83.190.1"       # AWS 另一個主要的 Anycast 進入點
+  - name: "Azure-Front-Door"
+    ip: "13.107.21.200"     # Microsoft/Azure 全球內容傳遞網節點
 
-  # --- 世界前5大 ISP 業者 (Top 5 Global Tier-1 ISPs) ---
+  # --- 世界前 5 大 ISP 業者 (Top 5 Global Tier-1 ISPs) ---
+  # 這些是網路骨幹業者，選用其 Looking Glass 或核心 DNS
+  - name: "---"
   - name: "Lumen-Level3"
-    ip: "4.2.2.1"
+    ip: "4.2.2.1"           # 全球最知名的 Tier-1 測試點
   - name: "NTT-Communications"
-    ip: "129.250.35.250"
+    ip: "129.250.35.250"    # NTT 日本/全球骨幹最穩定的 IP
   - name: "Telia-Arelion"
-    ip: "62.115.146.197"
-  - name: "GTT-Communications"
-    ip: "213.200.77.254"    # [已更新] 改為 GTT Looking Glass/Router
-  - name: "Tata-Communications"
-    ip: "216.6.86.130"      # [已更新] 改為 Tata 骨幹節點
+    ip: "62.115.146.197"    # 歐洲最大的骨幹業者
+  - name: "GTT-Global-Core"
+    ip: "141.136.111.233"   # [更新] GTT 替代穩定節點 (原 208.116.131.10 易禁 Ping)
+  - name: "Tata-Global-Network"
+    ip: "216.6.86.130"      # [更新] Tata 穩定之 Looking Glass 節點
 
-  # --- 世界前5大 IX 業者 (Top 5 Global IXPs) ---
-  # 註：IXP 內部 LAN IP 常封鎖 Ping，已更換為該交換中心的 Route Server (路由伺服器)
+  # --- 世界前 5 大 IX 業者 (Top 5 Global IXPs) ---
+  # 註：IXP 內部 LAN 常禁 Ping，此處選用其 Route Server (路由伺服器)
+  - name: "---"
   - name: "DE-CIX-Frankfurt"
-    ip: "80.81.192.11"      # [已更新] rs1.fra.de-cix.net
+    ip: "80.81.192.11"      # DE-CIX 德國交換中心 RS1
   - name: "AMS-IX-Amsterdam"
-    ip: "80.249.208.1"      # 若此節點仍不穩，可換為 80.249.208.11 (Route Server)
-  - name: "LINX-London"
-    ip: "195.66.225.1"      # [已更新] rs1.linx.net
-  - name: "Equinix-Ashburn"
-    ip: "206.126.236.10"    # [已更新] Equinix Ashburn Route Server
-  - name: "HKIX-Hong-Kong"
-    ip: "123.255.90.11"     # [已更新] rs1.hkix.net
+    ip: "80.249.208.11"     # AMS-IX 荷蘭交換中心 RS1
+  - name: "LINX-London-RS"
+    ip: "195.66.225.1"      # 倫敦交換中心 Route Server
+  - name: "Equinix-Ashburn-RS"
+    ip: "206.126.236.10"    # 北美維吉尼亞 Equinix 交換中心
+  - name: "HKIX-Hong-Kong-RS"
+    ip: "123.255.90.11"     # 香港交換中心 HKIX 路由伺服器
 
-  # --- 世界前3大 CDN 業者 (Top 3 Global CDNs) ---
+  # --- 世界前 3 大 CDN 業者 (Top 3 Global CDNs) ---
+  - name: "---"
   - name: "Cloudflare-Anycast"
-    ip: "1.1.1.1"
-  - name: "Akamai-Edge"
-    ip: "2.22.230.1"        # [已更新] 改為 Akamai Anycast 權威 DNS 節點 (全球皆可 Ping)
+    ip: "1.1.1.1"           # 全球最快的 Anycast DNS 之一
+  - name: "Akamai-Edge-DNS"
+    ip: "184.84.243.181"    # [更新] Akamai 穩定的邊緣測試點 (原 23.211.0.110 已禁)
   - name: "Fastly-Anycast"
-    ip: "151.101.1.57"
+    ip: "151.101.1.57"      # Fastly 全球邊緣節點
 
   # --- 世界的 BGP 登記業者 (Global BGP Backbone) ---
-  - name: "Cogent-Communications"
-    ip: "66.28.0.45"
+  - name: "---"
   - name: "Hurricane-Electric"
-    ip: "74.82.42.42"
+    ip: "74.82.42.42"       # HE.net 穩定的 Anycast DNS
+  - name: "Cogent-Communications"
+    ip: "66.28.0.45"        # Cogent 核心網路節點
+  - name: "Verisign-Root"
+    ip: "198.41.0.4"        # Root Nameserver (根伺服器 A)
 
-  # --- 台灣前10大 ISP (Top 10 Taiwan ISPs) ---
+  # --- 台灣前 10 大 ISP (Top 10 Taiwan ISPs) ---
+  - name: "---"
   - name: "HiNet-Chunghwa"
-    ip: "168.95.1.1"
-  - name: "Seednet-FarEasTone"
-    ip: "139.175.1.1"
-  - name: "TWM-Broadband"
-    ip: "211.76.144.66"
-  - name: "Kbro-Cable"
-    ip: "123.193.0.1"
-  - name: "CNS-Homeplus"
-    ip: "219.85.128.115"
+    ip: "168.95.1.1"        # 中華電信 DNS
+  - name: "Seednet-FET"
+    ip: "139.175.1.1"       # 遠傳/Seednet DNS
+  - name: "TWM-Taiwan-Fixed"
+    ip: "211.76.144.66"     # 台灣大哥大/台固 DNS
+  - name: "Kbro-Cable-Net"
+    ip: "211.76.112.59"     # 凱擘寬頻 DNS
+  - name: "Homeplus-CNS"
+    ip: "219.85.128.115"    # 中嘉寬頻核心節點
   - name: "TBC-Broadband"
-    ip: "211.73.160.1"
-  - name: "TOPT-Broadband"
-    ip: "123.240.1.1"
+    ip: "211.73.160.1"      # 台灣寬頻核心節點
   - name: "So-net-Taiwan"
-    ip: "61.64.127.2"
-  - name: "Vee-Time"
-    ip: "123.204.8.1"
+    ip: "61.64.127.2"       # So-net 寬頻 DNS
   - name: "APTG-Telecom"
-    ip: "210.209.10.115"
+    ip: "210.209.10.115"    # 亞太電信核心節點
+  - name: "Vee-Time"
+    ip: "123.204.8.1"       # 威達雲端
+  - name: "D-V-O-Taiwan"
+    ip: "123.240.1.1"       # 台中數位/大揚
 
   # --- 台灣學術網路 (TANet Backbone) ---
-  # 註：核心路由通常禁 Ping，已全數改為各單位對外開放的官方 DNS IP
-  - name: "TANet-MOE-Core"
-    ip: "140.111.1.2"       # [已更新] 教育部 DNS
-  - name: "TANet-NTU"
-    ip: "140.112.254.4"     # [已更新] 台灣大學 DNS
-  - name: "TANet-NYCU"
-    ip: "140.113.250.135"   # [已更新] 陽明交通大學 DNS
-  - name: "TANet-NTHU"
-    ip: "140.114.63.1"      # [已更新] 清華大學 DNS
-  - name: "TANet-NCKU"
-    ip: "140.116.2.6"       # [已更新] 成功大學 DNS
+  # 改用各大學對外開放的權威 DNS，比核心路由器更穩定
+  - name: "---"
+  - name: "TANet-MOE-DNS"
+    ip: "140.111.1.2"       # 教育部 DNS
+  - name: "TANet-NTU-DNS"
+    ip: "140.112.254.4"     # 台灣大學 DNS
+  - name: "TANet-NYCU-DNS"
+    ip: "140.113.250.135"   # 陽明交通大學 DNS
+  - name: "TANet-NTHU-DNS"
+    ip: "140.114.63.1"      # 清華大學 DNS
+  - name: "TANet-NCKU-DNS"
+    ip: "140.116.2.6"       # 成功大學 DNS
 
   # --- 台灣二類電信與 IDC 業者 (Taiwan Type II / IDC) ---
+  - name: "---"
   - name: "Chief-Telecom-IDC"
-    ip: "210.65.1.1"        # [已更新] 改為是方電信對外 DNS，保證可 Ping
-  - name: "NCHC-Taiwan"
-    ip: "211.79.61.1"       # [已更新] 改為 TWAREN 高速學術網核心路由器
+    ip: "210.65.1.1"        # [更新] 是方電信對外 DNS (最穩定)
+  - name: "NCHC-TWAREN"
+    ip: "211.79.61.1"       # [更新] 國網中心 TWAREN 核心路由節點
+  - name: "Google-IDC-Taiwan"
+    ip: "104.155.200.0"     # Google 彰濱資料中心網段參考點
