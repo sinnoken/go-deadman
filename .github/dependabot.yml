@@ -1,0 +1,23 @@
+# .github/dependabot.yml
+version: 2
+updates:
+  # 1. 自動更新 Go 語言套件 (go.mod)
+  - package-ecosystem: "gomod"
+    directory: "/" # go.mod 所在的目錄
+    schedule:
+      interval: "weekly" # 每週檢查一次 (也可設為 daily)
+    groups:
+      go-dependencies:
+        patterns:
+          - "*" # 將所有 Go 套件更新合併成一個 Pull Request，避免洗板
+    open-pull-requests-limit: 5
+
+  # 2. 自動更新 GitHub Actions (你的 workflow 檔)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions-updates:
+        patterns:
+          - "*"
