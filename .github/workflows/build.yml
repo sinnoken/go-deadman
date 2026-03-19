@@ -32,7 +32,7 @@ jobs:
           fi
           go mod tidy
           go mod download
-          
+        
       - name: Prepare Configuration
         run: |
           cp internet.yaml config.yaml
