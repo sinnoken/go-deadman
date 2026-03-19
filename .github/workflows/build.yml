@@ -57,8 +57,6 @@ jobs:
           go mod tidy
           go mod download
 
-
-
       # --- 新增步驟：處理設定檔 ---
       - name: Prepare Configuration
         run: |
@@ -66,6 +64,18 @@ jobs:
           # 我們可以在編譯前，把 a.yaml 或 b.yaml 複製並重新命名為 config.yaml
           # 讓 go:embed 或執行時可以抓到正確的檔案
           cp ${{ matrix.config }}.yaml config.yaml
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          args: --timeout=5m
+
+      # 5. 安全漏洞掃描
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
       - name: Build Binary
         run: |
