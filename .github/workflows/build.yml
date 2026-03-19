@@ -107,7 +107,7 @@ jobs:
         run: |
           VERSION=${{ github.ref_name }}
           go install github.com/tc-hib/go-winres@latest
-          go-winres make --version "$VERSION"
+          go-winres make -version "$VERSION"
           
       - name: Prepare Configuration
         run: |
