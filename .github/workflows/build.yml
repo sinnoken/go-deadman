@@ -25,6 +25,20 @@ jobs:
           go-version: 'stable'
           cache: false
 
+      - name: Initialize & Install Dependencies
+        run: |
+          if [ ! -f go.mod ]; then
+            go mod init go-deadman
+          fi
+          go mod tidy
+          go mod download
+
+      - name: Install and Run go-winres (Windows only)
+        if: matrix.goos == 'windows'
+        run: |
+          go install github.com/tc-hib/go-winres@latest
+          go-winres make
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -58,20 +72,6 @@ jobs:
             goarch: amd64
 
     steps:
-
-      - name: Initialize & Install Dependencies
-        run: |
-          if [ ! -f go.mod ]; then
-            go mod init go-deadman
-          fi
-          go mod tidy
-          go mod download
-
-      - name: Install and Run go-winres (Windows only)
-        if: matrix.goos == 'windows'
-        run: |
-          go install github.com/tc-hib/go-winres@latest
-          go-winres make
       
       - name: Prepare Configuration
         run: |
