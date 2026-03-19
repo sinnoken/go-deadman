@@ -20,9 +20,10 @@ jobs:
         # 第一維度：版本
         config: [tasks,internet ] 
         # 第二維度：作業系統
-        goos: [linux, windows, darwin]
-        # 第三維度：架構
-        goarch: [amd64, arm64]
+        # goos: [linux, windows, darwin]
+        goos: [windows]
+        # 第三維度：架構 goarch: [amd64, arm64]
+        goarch: [amd64]
         # 排除不想要的組合 (例如 windows 不需要 arm64)
         exclude:
           - goos: windows
