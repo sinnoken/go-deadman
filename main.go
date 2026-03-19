@@ -385,6 +385,7 @@ func fallbackWorker(d *Device, ip string, interval time.Duration, jitter float64
 		if jit <= 0 {
 			jit = 0.1
 		}
+		// #nosec G404
 		timer.Reset(time.Duration(baseWait * (1 + (rand.Float64()*2 - 1)*jit)))
 		<-timer.C
 	}
