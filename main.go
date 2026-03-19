@@ -1,7 +1,7 @@
 package main
 
 // 加入這行自動化指令
-//go:generate go-winres make --product-version="1.0.0.0" --file-version="1.0.0.0"
+//go:generate go-winres make --product-version=1.0.0.0 --file-version=1.0.0.0
 
 import (
 	"bytes"
