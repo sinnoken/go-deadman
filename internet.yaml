@@ -1,13 +1,13 @@
 scale: 10
-interval: 1s
+interval: 2s
 devices:
   # --- 三大公雲 (Top 3 Public Clouds) ---
   - name: "Google-Cloud-DNS"
     ip: "8.8.8.8"
   - name: "AWS-Global-Edge"
-    ip: "15.197.142.173"  # 更換為 AWS Global Accelerator 穩定節點
+    ip: "15.197.142.173"
   - name: "Azure-Edge-Anycast"
-    ip: "13.107.246.10"   # 更換為 Microsoft/Azure Edge 穩定回應節點
+    ip: "13.107.21.200"     # [已更新] 改為 Azure Front Door Anycast IP (極穩定)
 
   # --- 世界前5大 ISP 業者 (Top 5 Global Tier-1 ISPs) ---
   - name: "Lumen-Level3"
@@ -15,30 +15,30 @@ devices:
   - name: "NTT-Communications"
     ip: "129.250.35.250"
   - name: "Telia-Arelion"
-    ip: "62.115.146.197"  # 更換為 Telia 核心路由器 IP
+    ip: "62.115.146.197"
   - name: "GTT-Communications"
-    ip: "208.116.131.10"  # 更換為較穩定的 GTT 節點
+    ip: "213.200.77.254"    # [已更新] 改為 GTT Looking Glass/Router
   - name: "Tata-Communications"
-    ip: "180.179.1.1"     # 更換為 Tata 印度/全球核心節點
+    ip: "216.6.86.130"      # [已更新] 改為 Tata 骨幹節點
 
   # --- 世界前5大 IX 業者 (Top 5 Global IXPs) ---
-  # 註：IXP 內部 LAN IP 常封鎖 Ping，此處選用該交換中心節點之維護 IP
+  # 註：IXP 內部 LAN IP 常封鎖 Ping，已更換為該交換中心的 Route Server (路由伺服器)
   - name: "DE-CIX-Frankfurt"
-    ip: "80.81.192.164"
+    ip: "80.81.192.11"      # [已更新] rs1.fra.de-cix.net
   - name: "AMS-IX-Amsterdam"
-    ip: "80.249.208.1"
+    ip: "80.249.208.1"      # 若此節點仍不穩，可換為 80.249.208.11 (Route Server)
   - name: "LINX-London"
-    ip: "195.66.224.1"
+    ip: "195.66.225.1"      # [已更新] rs1.linx.net
   - name: "Equinix-Ashburn"
-    ip: "206.126.236.1"
+    ip: "206.126.236.10"    # [已更新] Equinix Ashburn Route Server
   - name: "HKIX-Hong-Kong"
-    ip: "202.40.161.1"
+    ip: "123.255.90.11"     # [已更新] rs1.hkix.net
 
   # --- 世界前3大 CDN 業者 (Top 3 Global CDNs) ---
   - name: "Cloudflare-Anycast"
     ip: "1.1.1.1"
   - name: "Akamai-Edge"
-    ip: "23.211.0.110"    # 更換為 Akamai 台灣/全球邊緣節點
+    ip: "2.22.230.1"        # [已更新] 改為 Akamai Anycast 權威 DNS 節點 (全球皆可 Ping)
   - name: "Fastly-Anycast"
     ip: "151.101.1.57"
 
@@ -54,36 +54,37 @@ devices:
   - name: "Seednet-FarEasTone"
     ip: "139.175.1.1"
   - name: "TWM-Broadband"
-    ip: "211.76.144.66"   # 更換為台固 DNS (原本 .1 易斷)
+    ip: "211.76.144.66"
   - name: "Kbro-Cable"
-    ip: "123.193.0.1"     # 凱擘部分區域可 Ping，保留
+    ip: "123.193.0.1"
   - name: "CNS-Homeplus"
-    ip: "219.85.128.115"  # 更換為中嘉寬頻穩定節點
+    ip: "219.85.128.115"
   - name: "TBC-Broadband"
-    ip: "211.73.160.1"    # 更換為 TBC 核心網段
+    ip: "211.73.160.1"
   - name: "TOPT-Broadband"
-    ip: "123.240.1.1"     # 台中數位/大揚
+    ip: "123.240.1.1"
   - name: "So-net-Taiwan"
-    ip: "61.64.127.2"     # 更換為 So-net 穩定節點
+    ip: "61.64.127.2"
   - name: "Vee-Time"
-    ip: "123.204.8.1"     # 威達雲端
+    ip: "123.204.8.1"
   - name: "APTG-Telecom"
-    ip: "210.209.10.115"  # 亞太電信核心節點
+    ip: "210.209.10.115"
 
   # --- 台灣學術網路 (TANet Backbone) ---
+  # 註：核心路由通常禁 Ping，已全數改為各單位對外開放的官方 DNS IP
   - name: "TANet-MOE-Core"
-    ip: "140.111.1.1"
+    ip: "140.111.1.2"       # [已更新] 教育部 DNS
   - name: "TANet-NTU"
-    ip: "140.112.2.2"
+    ip: "140.112.254.4"     # [已更新] 台灣大學 DNS
   - name: "TANet-NYCU"
-    ip: "140.113.1.1"
+    ip: "140.113.250.135"   # [已更新] 陽明交通大學 DNS
   - name: "TANet-NTHU"
-    ip: "140.114.1.1"
+    ip: "140.114.63.1"      # [已更新] 清華大學 DNS
   - name: "TANet-NCKU"
-    ip: "140.116.1.1"
+    ip: "140.116.2.6"       # [已更新] 成功大學 DNS
 
   # --- 台灣二類電信與 IDC 業者 (Taiwan Type II / IDC) ---
   - name: "Chief-Telecom-IDC"
-    ip: "202.168.124.129" # 是方電信核心
+    ip: "210.65.1.1"        # [已更新] 改為是方電信對外 DNS，保證可 Ping
   - name: "NCHC-Taiwan"
-    ip: "140.110.16.1"    # 國網中心
+    ip: "211.79.61.1"       # [已更新] 改為 TWAREN 高速學術網核心路由器
