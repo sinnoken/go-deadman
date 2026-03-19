@@ -218,8 +218,7 @@ func deviceWorker(d *Device, ip string, interval time.Duration, jitter float64) 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	
-	// [加回這裡] 初始啟動時間的 Jitter，打散各設備的併發起點
-	// 讓每個 Worker 隨機延遲 0 ~ interval 的時間再啟動
+	// #nosec G404
 	offset := time.Duration(rand.Float64() * float64(interval))
 	time.Sleep(offset)
 	
@@ -331,6 +330,7 @@ func deviceWorker(d *Device, ip string, interval time.Duration, jitter float64) 
 func fallbackWorker(d *Device, ip string, interval time.Duration, jitter float64) {
 	timer := time.NewTimer(0)
 	<-timer.C
+	// #nosec G404
 	timer.Reset(time.Duration(rand.Float64() * float64(interval)))
 	<-timer.C
 
@@ -342,13 +342,23 @@ func fallbackWorker(d *Device, ip string, interval time.Duration, jitter float64
 		d.mu.Lock()
 		d.Loading = true
 		d.mu.Unlock()
-
+		
+		if net.ParseIP(ip) == nil {
+			// 如果不是合法 IP，可能是域名或非法字串。
+			// 雖然先前 resolve 已經處理過，但為了 Gosec 審核與安全，此處必須顯式檢查。
+			d.UpdateStats(0, false)
+			time.Sleep(interval)
+			continue
+		}
+				
 		ctx, cancel := context.WithTimeout(context.Background(), interval)
 		var cmd *exec.Cmd
 		timeoutMs := strconv.Itoa(int(interval.Milliseconds()))
 		if runtime.GOOS == "windows" {
+			// #nosec G204
 			cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", timeoutMs, ip)
 		} else {
+			// #nosec G204
 			cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "1", ip)
 		}
 
