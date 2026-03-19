@@ -12,7 +12,7 @@
       "0409": {
         "identity": {
           "name": "",
-          "version": "1.9.1.0"
+          "version": "{version}"
         },
         "description": "go-deadman",
         "minimum-os": "win7",
@@ -49,10 +49,10 @@
             "LegalCopyright": "go-deadman",
             "LegalTrademarks": "go-deadman",
             "OriginalFilename": "go-deadman",
-            "PrivateBuild": "",
+            "PrivateBuild": "go-deadman",
             "ProductName": "go-deadman",
-            "ProductVersion": "",
-            "SpecialBuild": ""
+            "ProductVersion": "{version}",
+            "SpecialBuild": "go-deadman"
           }
         }
       }
