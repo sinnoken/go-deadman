@@ -53,7 +53,12 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
-          
+      
+      - name: Run Gosec
+        uses: securego/gosec@master
+        with:
+          args: ./... # 掃描全專案
+                
   build:
     name: Build Binary
     needs: lint
