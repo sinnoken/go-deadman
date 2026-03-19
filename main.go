@@ -33,7 +33,7 @@ var embeddedYaml []byte
 // ---------------------------------------------------------
 
 const (
-	VERSION     = "v1.10.0-perf" // 優化高精度與非同步渲染
+	VERSION     = "v1.11.0-event-driven" // 升級為 Socket 重用與 Event Callback 模式
 	HIST_SIZE   = 30
 	WINDOW_SIZE = 50
 	RENDER_FPS  = 20 // 畫面刷新頻率 (每秒 20 次)
@@ -91,7 +91,6 @@ type model struct {
 	hostname string
 }
 
-// Bubbletea 訊息類型 (只留下用於渲染的 Tick)
 type tickMsg time.Time
 
 // ---------------------------------------------------------
@@ -144,14 +143,12 @@ func (d *Device) UpdateStats(rtt float64, success bool) {
 			d.Window = d.Window[1:]
 		}
 
-		// 1. 計算平均延遲
 		var sum float64
 		for _, v := range d.Window {
 			sum += v
 		}
 		d.AvgRTT = sum / float64(len(d.Window))
 
-		// 2. 計算 Jitter (相鄰 RTT 絕對誤差的平均)
 		if len(d.Window) >= 2 {
 			var jitterSum float64
 			for i := 1; i < len(d.Window); i++ {
@@ -173,7 +170,7 @@ func (d *Device) UpdateStats(rtt float64, success bool) {
 }
 
 // ---------------------------------------------------------
-// 網路層邏輯：獨立背景執行緒 (Goroutine Worker)
+// 網路層邏輯：事件驅動與連線重用 (Option A)
 // ---------------------------------------------------------
 
 func resolveAndStartWorker(d *Device, interval time.Duration, jitter float64) {
@@ -185,7 +182,6 @@ func resolveAndStartWorker(d *Device, interval time.Duration, jitter float64) {
 	ip := strings.TrimSpace(rawIP)
 	isFail := false
 
-	// 1. DNS 正反解邏輯
 	if name == "" && ip != "" {
 		names, err := net.LookupAddr(ip)
 		if err == nil && len(names) > 0 {
@@ -203,11 +199,9 @@ func resolveAndStartWorker(d *Device, interval time.Duration, jitter float64) {
 		}
 	}
 
-	// 2. 截斷過長字串
 	name = truncate(name, 15)
 	ip = truncate(ip, 15)
 
-	// 3. 寫入狀態 (UI 渲染緒會自動抓取)
 	d.mu.Lock()
 	d.Name = name
 	d.IP = ip
@@ -215,26 +209,126 @@ func resolveAndStartWorker(d *Device, interval time.Duration, jitter float64) {
 	d.Loading = !isFail
 	d.mu.Unlock()
 
-	// 4. 如果 DNS 成功，才進入無限循環的 Ping Worker
 	if !isFail {
 		deviceWorker(d, ip, interval, jitter)
 	}
 }
 
 func deviceWorker(d *Device, ip string, interval time.Duration, jitter float64) {
-	// [進階優化] 鎖定 OS 執行緒，降低排程器 Context Switch 帶來的微秒級延遲誤差
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	// [物件重用] 建立一個 Timer 並在迴圈內 Reset，取代不斷呼叫 time.Sleep()
+	pinger, err := probing.NewPinger(ip)
+	if err != nil {
+		fallbackWorker(d, ip, interval, jitter)
+		return
+	}
+
+	// [核心優化] 設定為無窮發送模式，完美重用 Socket
+	pinger.Count = -1
+	pinger.Interval = interval
+	if runtime.GOOS == "windows" {
+		pinger.SetPrivileged(true)
+	} else {
+		pinger.SetPrivileged(false)
+	}
+
+	recvCh := make(chan *probing.Packet, 100)
+	pinger.OnRecv = func(pkt *probing.Packet) {
+		recvCh <- pkt
+	}
+
+	// 捕捉 Pinger 啟動狀態，若失敗立刻轉交 Fallback
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- pinger.Run()
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			fallbackWorker(d, ip, interval, jitter)
+			return
+		}
+	case <-time.After(time.Millisecond * 50):
+		// Pinger 正常執行中
+	}
+
+	expectedSeq := 0
+	timeoutDuration := interval + time.Second
+	timer := time.NewTimer(timeoutDuration)
+
+	for {
+		d.mu.Lock()
+		d.Loading = true
+		d.mu.Unlock()
+
+		select {
+		case err := <-errCh:
+			if err != nil {
+				fallbackWorker(d, ip, interval, jitter)
+				return
+			}
+
+		case pkt := <-recvCh:
+			// 如果收到過遲的封包 (Seq 已經落後於預期)，代表已經被計為 Timeout，直接捨棄以確保圖表一致性
+			if pkt.Seq < expectedSeq {
+				continue
+			}
+
+			// 如果發生連續掉包，透過 Seq 的差距，立刻補齊遺失的歷史紀錄
+			for expectedSeq < pkt.Seq {
+				d.mu.Lock()
+				d.IsNative = true
+				d.Loading = false
+				d.mu.Unlock()
+				d.UpdateStats(0, false)
+				expectedSeq++
+			}
+
+			// 寫入當前成功數據
+			rtt := float64(pkt.Rtt.Nanoseconds()) / 1000000.0
+			d.mu.Lock()
+			d.IsNative = true
+			d.Loading = false
+			d.mu.Unlock()
+			d.UpdateStats(rtt, true)
+
+			expectedSeq = pkt.Seq + 1
+
+			// 精準重置超時定時器
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(timeoutDuration)
+
+		case <-timer.C:
+			// 觸發超時機制 (遺失封包)
+			d.mu.Lock()
+			d.IsNative = true
+			d.Loading = false
+			d.mu.Unlock()
+			d.UpdateStats(0, false)
+
+			expectedSeq++
+			timer.Reset(interval)
+		}
+	}
+}
+
+// ---------------------------------------------------------
+// 備援方案 (Fallback)：相容無權限環境，維持客製化 Jitter
+// ---------------------------------------------------------
+
+func fallbackWorker(d *Device, ip string, interval time.Duration, jitter float64) {
 	timer := time.NewTimer(0)
 	<-timer.C
-
-	offset := time.Duration(rand.Float64() * float64(interval))
-	timer.Reset(offset)
+	timer.Reset(time.Duration(rand.Float64() * float64(interval)))
 	<-timer.C
 
-	// [物件重用] 備用方案的 Buffer，避免迴圈內不斷分配記憶體
 	var outBuf bytes.Buffer
 
 	for {
@@ -244,73 +338,39 @@ func deviceWorker(d *Device, ip string, interval time.Duration, jitter float64) 
 		d.Loading = true
 		d.mu.Unlock()
 
-		rtt := 0.0
-		success := false
-		isNative := false
-
-		pinger, err := probing.NewPinger(ip)
-		if err == nil {
-			pinger.Count = 1
-			pinger.Timeout = interval
-			if runtime.GOOS == "windows" {
-				pinger.SetPrivileged(true)
-			} else {
-				pinger.SetPrivileged(false)
-			}
-			if err = pinger.Run(); err == nil {
-				stats := pinger.Statistics()
-				if stats.PacketsRecv > 0 {
-					// [顯示精度提升] 使用 Nanoseconds 轉換來精準捕捉微秒級數值
-					rtt = float64(stats.MaxRtt.Nanoseconds()) / 1000000.0
-					success = true
-					isNative = true
-				}
-			}
+		ctx, cancel := context.WithTimeout(context.Background(), interval)
+		var cmd *exec.Cmd
+		timeoutMs := strconv.Itoa(int(interval.Milliseconds()))
+		if runtime.GOOS == "windows" {
+			cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", timeoutMs, ip)
+		} else {
+			cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "1", ip)
 		}
 
-		// Fallback
-		if !success {
-			ctx, cancel := context.WithTimeout(context.Background(), interval)
-			var cmd *exec.Cmd
-			timeoutMs := strconv.Itoa(int(interval.Milliseconds()))
-			if runtime.GOOS == "windows" {
-				cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", timeoutMs, ip)
-			} else {
-				cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "1", ip)
-			}
+		outBuf.Reset()
+		cmd.Stdout = &outBuf
+		_ = cmd.Run()
+		cancel()
 
-			outBuf.Reset()
-			cmd.Stdout = &outBuf
-			_ = cmd.Run()
-			cancel()
-
-			rtt, success = parseRTT(outBuf.String())
-			isNative = false
-		}
+		rtt, success := parseRTT(outBuf.String())
 
 		d.mu.Lock()
 		d.Loading = false
-		d.IsNative = isNative
+		d.IsNative = false
 		d.mu.Unlock()
 
-		// 寫入數據紀錄
 		d.UpdateStats(rtt, success)
 
-		// 計算間距與 Jitter
 		elapsed := time.Since(start)
 		baseWait := float64(interval) - float64(elapsed)
 		if baseWait < 0 {
 			baseWait = 0
 		}
-
 		jit := jitter
 		if jit <= 0 {
 			jit = 0.1
 		}
-		nextWait := time.Duration(baseWait * (1 + (rand.Float64()*2 - 1)*jit))
-
-		// 使用重用的 Timer
-		timer.Reset(nextWait)
+		timer.Reset(time.Duration(baseWait * (1 + (rand.Float64()*2 - 1)*jit)))
 		<-timer.C
 	}
 }
@@ -362,7 +422,6 @@ func (m model) Init() tea.Cmd {
 			d.mu.Lock()
 			d.Loading = true
 			d.mu.Unlock()
-			// [解耦] Worker 獨立運行，不再依賴 Channel 卡住 UI Thread
 			go resolveAndStartWorker(d, itv, m.cfg.Jitter)
 		}
 	}
@@ -378,7 +437,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case tickMsg:
-		// 定期觸發渲染
 		return m, tickCmd()
 	}
 	return m, nil
@@ -407,7 +465,6 @@ func (m model) View() string {
 		sepWidth = 85
 	}
 
-	// [顯示精度提升] 修改排版配置，容納 %8.3f 的寬度
 	header := fmt.Sprintf("\n  %-15s %-15s %5s %8s %8s %8s %6s  %-*s",
 		"HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "JIT(ms)", "SNT", maxHist, "LOG-STATUS")
 	s.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(strings.Repeat("─", sepWidth)) + "\n")
@@ -418,7 +475,6 @@ func (m model) View() string {
 			continue
 		}
 
-		// [讀寫分離] 短暫獲取 RLock()，將資料拷貝出，不阻礙 Worker 更新
 		d.mu.RLock()
 		isLoading := d.Loading
 		isNative := d.IsNative
@@ -430,94 +486,4 @@ func (m model) View() string {
 		avgRTT := d.AvgRTT
 		jitter := d.Jitter
 		snt := d.Snt
-		histCount := d.HistCount
-		histIdx := d.HistoryIdx
-		var historyCopy [HIST_SIZE]Heartbeat
-		copy(historyCopy[:], d.History[:])
-		d.mu.RUnlock()
-
-		indicator := "  "
-		if isLoading {
-			indicator = arrowStyle.Render("> ")
-		}
-
-		var hist strings.Builder
-		showCount := histCount
-		if showCount > maxHist {
-			showCount = maxHist
-		}
-		for j := 1; j <= showCount; j++ {
-			h := historyCopy[(histIdx-j+HIST_SIZE)%HIST_SIZE]
-			if h.Success {
-				hist.WriteString(upStyle.Render(h.Char))
-			} else {
-				hist.WriteString(downStyle.Render(h.Char))
-			}
-		}
-
-		tag := " "
-		if isNative {
-			tag = "*"
-		}
-
-		if displayName == "" {
-			displayName = "resolving..."
-		}
-		if displayIP == "" {
-			displayIP = "resolving..."
-		}
-
-		// [顯示精度提升] RTT/AVG/Jitter 修改為 %8.3f
-		line := fmt.Sprintf("%-15s %-15s %4d%% %8.3f %8.3f %8.3f %5d%s  ",
-			displayName, displayIP, lossRate, lastRTT, avgRTT, jitter, snt, tag)
-
-		s.WriteString(indicator)
-
-		if isDNSFail {
-			s.WriteString(failRowStyle.Render(line) + downStyle.Render("DNS RESOLVE FAILED\n"))
-		} else if histCount > 0 && !historyCopy[(histIdx-1+HIST_SIZE)%HIST_SIZE].Success {
-			s.WriteString(failRowStyle.Render(line) + hist.String() + "\n")
-		} else {
-			s.WriteString(line + hist.String() + "\n")
-		}
-	}
-
-	footer := fmt.Sprintf("\n Interval: %s | App Jitter: %.f%% | *: Native | Window: %d",
-		m.cfg.Interval, m.cfg.Jitter*100, WINDOW_SIZE)
-	s.WriteString(dimStyle.Render(footer))
-	return s.String()
-}
-
-// ---------------------------------------------------------
-// 程式進入點
-// ---------------------------------------------------------
-
-func main() {
-	rand.Seed(time.Now().UnixNano())
-
-	var cfg Config
-	err := yaml.Unmarshal(embeddedYaml, &cfg)
-	if err != nil {
-		fmt.Printf("讀取設定檔 config.yaml 失敗: %v\n", err)
-		os.Exit(1)
-	}
-
-	if cfg.Interval == "" {
-		cfg.Interval = "1s"
-	}
-	if cfg.Jitter <= 0 {
-		cfg.Jitter = 0.1
-	}
-
-	hostname, _ := os.Hostname()
-
-	p := tea.NewProgram(model{
-		cfg:      cfg,
-		devices:  cfg.Devices,
-		hostname: hostname,
-	}, tea.WithAltScreen())
-
-	if _, err := p.Run(); err != nil {
-		fmt.Printf("Error running program: %v", err)
-	}
-}
+		histCount
