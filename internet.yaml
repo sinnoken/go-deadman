@@ -4,10 +4,10 @@ devices:
   # --- 三大公雲 (Top 3 Public Clouds) ---
   - name: "Google-Cloud-DNS"
     ip: "8.8.8.8"
-  - name: "AWS-Global-Accelerator"
-    ip: "13.248.118.1"
-  - name: "Azure-Edge"
-    ip: "13.107.21.200"
+  - name: "AWS-Global-Edge"
+    ip: "15.197.142.173"  # 更換為 AWS Global Accelerator 穩定節點
+  - name: "Azure-Edge-Anycast"
+    ip: "13.107.246.10"   # 更換為 Microsoft/Azure Edge 穩定回應節點
 
   # --- 世界前5大 ISP 業者 (Top 5 Global Tier-1 ISPs) ---
   - name: "Lumen-Level3"
@@ -15,15 +15,16 @@ devices:
   - name: "NTT-Communications"
     ip: "129.250.35.250"
   - name: "Telia-Arelion"
-    ip: "213.248.0.1"
+    ip: "62.115.146.197"  # 更換為 Telia 核心路由器 IP
   - name: "GTT-Communications"
-    ip: "141.136.0.1"
+    ip: "208.116.131.10"  # 更換為較穩定的 GTT 節點
   - name: "Tata-Communications"
-    ip: "121.240.2.197"
+    ip: "180.179.1.1"     # 更換為 Tata 印度/全球核心節點
 
   # --- 世界前5大 IX 業者 (Top 5 Global IXPs) ---
+  # 註：IXP 內部 LAN IP 常封鎖 Ping，此處選用該交換中心節點之維護 IP
   - name: "DE-CIX-Frankfurt"
-    ip: "80.81.192.1"
+    ip: "80.81.192.164"
   - name: "AMS-IX-Amsterdam"
     ip: "80.249.208.1"
   - name: "LINX-London"
@@ -37,7 +38,7 @@ devices:
   - name: "Cloudflare-Anycast"
     ip: "1.1.1.1"
   - name: "Akamai-Edge"
-    ip: "23.211.0.1"
+    ip: "23.211.0.110"    # 更換為 Akamai 台灣/全球邊緣節點
   - name: "Fastly-Anycast"
     ip: "151.101.1.57"
 
@@ -53,21 +54,21 @@ devices:
   - name: "Seednet-FarEasTone"
     ip: "139.175.1.1"
   - name: "TWM-Broadband"
-    ip: "211.20.144.1"
+    ip: "211.76.144.66"   # 更換為台固 DNS (原本 .1 易斷)
   - name: "Kbro-Cable"
-    ip: "123.193.0.1"
+    ip: "123.193.0.1"     # 凱擘部分區域可 Ping，保留
   - name: "CNS-Homeplus"
-    ip: "219.85.128.1"
+    ip: "219.85.128.115"  # 更換為中嘉寬頻穩定節點
   - name: "TBC-Broadband"
-    ip: "211.73.161.1"
+    ip: "211.73.160.1"    # 更換為 TBC 核心網段
   - name: "TOPT-Broadband"
-    ip: "123.240.0.1"
+    ip: "123.240.1.1"     # 台中數位/大揚
   - name: "So-net-Taiwan"
-    ip: "61.64.127.1"
+    ip: "61.64.127.2"     # 更換為 So-net 穩定節點
   - name: "Vee-Time"
-    ip: "123.204.1.1"
+    ip: "123.204.8.1"     # 威達雲端
   - name: "APTG-Telecom"
-    ip: "210.209.10.1"
+    ip: "210.209.10.115"  # 亞太電信核心節點
 
   # --- 台灣學術網路 (TANet Backbone) ---
   - name: "TANet-MOE-Core"
@@ -83,6 +84,6 @@ devices:
 
   # --- 台灣二類電信與 IDC 業者 (Taiwan Type II / IDC) ---
   - name: "Chief-Telecom-IDC"
-    ip: "202.168.124.1"
+    ip: "202.168.124.129" # 是方電信核心
   - name: "NCHC-Taiwan"
-    ip: "140.110.16.1"
+    ip: "140.110.16.1"    # 國網中心
