@@ -5,7 +5,7 @@ A high-performance, event-driven Terminal UI (TUI) application for monitoring ne
 
 Source reference: [upa/deadman](https://github.com/upa/deadman)
 
-![Version](https://img.shields.io/badge/version-v1.11.0-)
+![Version](https://img.shields.io/badge/version-v1.11.0-test)
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)
 
 ## ✨ Features
