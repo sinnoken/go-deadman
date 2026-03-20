@@ -12,7 +12,7 @@
       "0409": {
         "identity": {
           "name": "",
-          "version": "0.0.0.0"
+          "version": "1.0.0.0"
         },
         "description": "go-deadman",
         "minimum-os": "win7",
@@ -43,12 +43,12 @@
           "0409": {
             "Comments": "go-deadman",
             "CompanyName": "go-deadman",
-            "FileDescription": "go-deadman Monitor",
+            "FileDescription": "go-deadman ping Monitor",
             "FileVersion": "{version}",
             "InternalName": "go-deadman",
-            "LegalCopyright": "go-deadman",
+            "LegalCopyright": "Copyright © 2026 go-deadman. Licensed under the MIT License.",
             "LegalTrademarks": "go-deadman",
-            "OriginalFilename": "go-deadman",
+            "OriginalFilename": "go-deadman.exe",
             "PrivateBuild": "go-deadman",
             "ProductName": "go-deadman",
             "ProductVersion": "{version}",
