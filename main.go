@@ -469,7 +469,7 @@ func (m model) View() string {
 	var s strings.Builder
 
 	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render("go-deadman")) + "\n")
-	subTitle := fmt.Sprintf("From: %s | Version: %s | 顯示: Log+Avg 圖表", m.hostname, VERSION)
+	subTitle := fmt.Sprintf("From: %s | Version: %s | loss+rtt+avg+jitter+history", m.hostname, VERSION)
 	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, dimStyle.Render(subTitle)) + "\n")
 
 	// --- 1. 動態寬度計算區 ---
@@ -478,7 +478,7 @@ func (m model) View() string {
 
 	// 計算 History 圖表寬度，預留最少 30 給 Name 和 IP
 	maxHist := HIST_SIZE
-	if m.width-fixedStatsWidth-30 < HIST_SIZE {
+	if m.width-fixedStatsWidth-25 < HIST_SIZE {
 		maxHist = m.width - fixedStatsWidth - 30
 	}
 	if maxHist < 5 {
@@ -490,8 +490,8 @@ func (m model) View() string {
 	colWidth := remainingWidth / 2
 	if colWidth < 12 {
 		colWidth = 12 // 最小寬度
-	} else if colWidth > 35 {
-		colWidth = 35 // 最大寬度，避免畫面太過鬆散
+	} else if colWidth > 30 {
+		colWidth = 30 // 最大寬度，避免畫面太過鬆散
 	}
 
 	sepWidth := m.width
@@ -504,7 +504,7 @@ func (m model) View() string {
 	header := fmt.Sprintf(headerFormat,
 		colWidth, "HOSTNAME",
 		colWidth, "ADDRESS",
-		"LOSS", "RTT(ms)", "AVG(ms)", "JIT(ms)", "SNT", "LOG-STATUS")
+		"LOSS", "RTT(ms)", "AVG(ms)", "JIT(ms)", "SNT", "HISTORY")
 	s.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(strings.Repeat("─", sepWidth)) + "\n")
 
 	// --- 3. 渲染資料列 ---
