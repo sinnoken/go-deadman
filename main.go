@@ -99,6 +99,10 @@ type tickMsg time.Time
 
 func truncate(s string, maxLen int) string {
 	r := []rune(s)
+	// 避免 maxLen 過小導致的越界錯誤
+	if maxLen < 2 {
+		return string(r)
+	}
 	if len(r) > maxLen {
 		return string(r[:maxLen-2]) + ".."
 	}
@@ -199,8 +203,8 @@ func resolveAndStartWorker(d *Device, interval time.Duration, jitter float64) {
 		}
 	}
 
-	name = truncate(name, 15)
-	ip = truncate(ip, 15)
+	name = truncate(name, 50) // 放寬解析時的字串長度，實際顯示時會動態截斷
+	ip = truncate(ip, 50)
 
 	d.mu.Lock()
 	d.Name = name
@@ -468,12 +472,26 @@ func (m model) View() string {
 	subTitle := fmt.Sprintf("From: %s | Version: %s | 顯示: Log+Avg 圖表", m.hostname, VERSION)
 	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, dimStyle.Render(subTitle)) + "\n")
 
-	const fixedColsWidth = 76
-	maxHist := m.width - fixedColsWidth
-	if maxHist > HIST_SIZE {
-		maxHist = HIST_SIZE
-	} else if maxHist < 5 {
+	// --- 1. 動態寬度計算區 ---
+	// 數據欄位固定所需寬度 (LOSS + RTT + AVG + JIT + SNT + 空白間隔)
+	const fixedStatsWidth = 45 
+
+	// 計算 History 圖表寬度，預留最少 30 給 Name 和 IP
+	maxHist := HIST_SIZE
+	if m.width-fixedStatsWidth-30 < HIST_SIZE {
+		maxHist = m.width - fixedStatsWidth - 30
+	}
+	if maxHist < 5 {
 		maxHist = 5
+	}
+
+	// 剩下空間分給 Name 和 IP
+	remainingWidth := m.width - fixedStatsWidth - maxHist
+	colWidth := remainingWidth / 2
+	if colWidth < 12 {
+		colWidth = 12 // 最小寬度
+	} else if colWidth > 35 {
+		colWidth = 35 // 最大寬度，避免畫面太過鬆散
 	}
 
 	sepWidth := m.width
@@ -481,10 +499,15 @@ func (m model) View() string {
 		sepWidth = 85
 	}
 
-	header := fmt.Sprintf("\n  %-15s %-15s %5s %8s %8s %8s %6s  %-*s",
-		"HOSTNAME", "ADDRESS", "LOSS", "RTT(ms)", "AVG(ms)", "JIT(ms)", "SNT", maxHist, "LOG-STATUS")
+	// --- 2. 組合動態表頭 ---
+	headerFormat := fmt.Sprintf("\n  %%-*s %%-*s %%5s %%8s %%8s %%8s %%6s  %%-%ds", maxHist)
+	header := fmt.Sprintf(headerFormat,
+		colWidth, "HOSTNAME",
+		colWidth, "ADDRESS",
+		"LOSS", "RTT(ms)", "AVG(ms)", "JIT(ms)", "SNT", "LOG-STATUS")
 	s.WriteString(headerStyle.Render(header) + "\n" + dimStyle.Render(strings.Repeat("─", sepWidth)) + "\n")
 
+	// --- 3. 渲染資料列 ---
 	for _, d := range m.devices {
 		if d.Name == "---" {
 			s.WriteString(dimStyle.Render("  " + strings.Repeat("-", sepWidth-2)) + "\n")
@@ -539,8 +562,15 @@ func (m model) View() string {
 			displayIP = "resolving..."
 		}
 
-		line := fmt.Sprintf("%-15s %-15s %4d%% %8.3f %8.3f %8.3f %5d%s  ",
-			displayName, displayIP, lossRate, lastRTT, avgRTT, jitter, snt, tag)
+		// ⭐ 進行動態安全截斷
+		dispNameTrunc := truncate(displayName, colWidth)
+		dispIPTrunc := truncate(displayIP, colWidth)
+
+		rowFormatStr := fmt.Sprintf("%%-*s %%-*s %%4d%%%% %%8.3f %%8.3f %%8.3f %%5d%%s  ")
+		line := fmt.Sprintf(rowFormatStr,
+			colWidth, dispNameTrunc,
+			colWidth, dispIPTrunc,
+			lossRate, lastRTT, avgRTT, jitter, snt, tag)
 
 		s.WriteString(indicator)
 
