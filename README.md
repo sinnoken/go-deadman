@@ -2,7 +2,10 @@
 
 A high-performance, event-driven Terminal UI (TUI) application for monitoring network latency, jitter, and packet loss via ICMP ping. Built with Go, [Bubble Tea](https://github.com/charmbracelet/bubbletea), and [pro-bing](https://github.com/prometheus-community/pro-bing).
 
-![Version](https://img.shields.io/badge/version-v1.11.0--event--driven-blue)
+
+Source reference: [upa/deadman](https://github.com/upa/deadman)
+
+![Version](https://img.shields.io/badge/version-v1.11.0)
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)
 
 ## ✨ Features
