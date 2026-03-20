@@ -68,7 +68,7 @@ type Device struct {
 	AvgRTT     float64
 	Jitter     float64
 	Window     []float64
-	LossRate   int
+	LossRate   float64
 	History    [HIST_SIZE]Heartbeat
 	HistoryIdx int
 	HistCount  int
@@ -163,7 +163,9 @@ func (d *Device) UpdateStats(rtt float64, success bool) {
 			d.Jitter = 0.0
 		}
 	}
-	d.LossRate = (d.Loss * 100) / d.Snt
+	if d.Snt > 0 {
+        d.LossRate = (float64(d.Loss) * 100.0) / float64(d.Snt)
+    }
 
 	char := getLogChar(rtt, d.AvgRTT, success)
 	d.History[d.HistoryIdx] = Heartbeat{Char: char, Success: success}
@@ -562,15 +564,28 @@ func (m model) View() string {
 			displayIP = "resolving..."
 		}
 
+
+		var lossStr string
+		if lossRate > 0 && lossRate < 0.1 {
+		    lossStr = "<.1%" // 如果掉包極小，顯示 <.1% (剛好 4 字元，補一個空格變 5 字元)
+		    // 如果你一定要 0.01 精度，可以用:
+		    if lossRate < 0.01 {
+		        lossStr = "<.01%" // 剛好 5 個字元：< . 0 1 %
+		    }
+		} else {
+		    // 一般情況：整數加上百分比符號，並控制在 4 個字元內
+		    // 例如 " 10%" 或 "100%"
+		    lossStr = fmt.Sprintf("%3d%%", int(lossRate)) 
+		}
 		// ⭐ 進行動態安全截斷
 		dispNameTrunc := truncate(displayName, colWidth)
 		dispIPTrunc := truncate(displayIP, colWidth)
 
-		rowFormatStr := fmt.Sprintf("%%-*s %%-*s %%4d%%%% %%8.3f %%8.3f %%8.3f %%5d%%s  ")
+		rowFormatStr := fmt.Sprintf("%%-*s %%-*s %%5s %%8.3f %%8.3f %%8.3f %%5d%%s  ")
 		line := fmt.Sprintf(rowFormatStr,
 			colWidth, dispNameTrunc,
 			colWidth, dispIPTrunc,
-			lossRate, lastRTT, avgRTT, jitter, snt, tag)
+			lossStr, lastRTT, avgRTT, jitter, snt, tag)
 
 		s.WriteString(indicator)
 
