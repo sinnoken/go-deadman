@@ -33,7 +33,7 @@ var embeddedYaml []byte
 // ---------------------------------------------------------
 
 const (
-	VERSION     = "v1.11.0-event-driven" // 升級為 Socket 重用與 Event Callback 模式
+	VERSION     = "v1.11.0" // 升級為 Socket 重用與 Event Callback 模式
 	HIST_SIZE   = 100
 	WINDOW_SIZE = 50
 	RENDER_FPS  = 20 // 畫面刷新頻率 (每秒 20 次)
