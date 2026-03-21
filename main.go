@@ -113,25 +113,27 @@ func truncate(s string, maxLen int) string {
 // 核心演算法：狀態更新與視覺化
 // ---------------------------------------------------------
 
-func getLogChar(rtt, avg float64, success bool) string {
+func getLogChar(rtt float64, success bool) string {
 	if !success || rtt <= 0 {
 		return "·"
 	}
-	if avg <= 0 {
-		return "▄"
-	}
-	ratio := rtt / avg
-	diff := math.Log2(ratio) * 2.0
-	idx := 3 + int(math.Round(diff))
+
+	// 建議使用 2.4，最符合 500ms 的視覺上限
+	const base = 2.4
+	
+	// 使用 math.Max(1, rtt) 確保不會算出負數索引
+	// int() 會直接捨去小數點，達成階梯效果
+	idx := int(math.Log(math.Max(1, rtt)) / math.Log(base))
+
 	scales := []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
-	if idx < 0 {
-		idx = 0
-	}
+	
 	if idx >= len(scales) {
 		idx = len(scales) - 1
 	}
+	
 	return scales[idx]
 }
+
 
 func (d *Device) UpdateStats(rtt float64, success bool) {
 	d.mu.Lock()
@@ -167,7 +169,7 @@ func (d *Device) UpdateStats(rtt float64, success bool) {
         d.LossRate = (float64(d.Loss) * 100.0) / float64(d.Snt)
     }
 
-	char := getLogChar(rtt, d.AvgRTT, success)
+	char := getLogChar(rtt, success)
 	d.History[d.HistoryIdx] = Heartbeat{Char: char, Success: success}
 	d.HistoryIdx = (d.HistoryIdx + 1) % HIST_SIZE
 	if d.HistCount < HIST_SIZE {
