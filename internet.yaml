@@ -9,29 +9,29 @@ devices:
   - name: "Telia-Arelion"
     ip: "62.115.146.197"
   - name: "GTT-Global-Core"
-    ip: "216.221.10.197"      # [更新] 改用 GTT 官方網站/前端 IP
+    ip: "208.51.135.53"       # [更新] GTT 官方 DNS (原網關擋 Ping)
   - name: "Tata-Global-Network"
-    ip: "121.244.42.50"       # [更新] 改用 Tata 的替代測試 IP
+    ip: "121.244.0.3"         # [更新] Tata 公用 DNS 
 
   # --- 世界前 5 大 IX 業者 (Top 5 Global IXPs) ---
-  # 註：IXP 內部 Route Server 常禁 Ping，改用其公開網站 IP 較穩
+  # 註：IXP 內部 Route Server 常禁 Ping，改用其公開網站或 NTP IP 較穩
   - name: "---"
   - name: "DE-CIX-Frankfurt"
-    ip: "193.239.116.1"       # [更新] DE-CIX 官網 IP
+    ip: "80.81.192.11"        # [更新] DE-CIX Route Server 1 (這台通常允許 Ping)
   - name: "AMS-IX-Amsterdam"
-    ip: "195.69.146.50"       # [更新] AMS-IX 網站/測試 IP
+    ip: "195.69.144.66"       # [更新] AMS-IX 官方 NTP 伺服器
   - name: "LINX-London-RS"
-    ip: "195.66.225.254"      # [更新] 嘗試 LINX 其他替代節點
+    ip: "195.66.225.254"      # [維持] 你圖片中這個是白色的，有通
   - name: "Equinix-Ashburn-RS"
-    ip: "206.126.236.1"       # [更新] 嘗試 Equinix 閘道
+    ip: "199.204.137.100"     # [更新] Equinix 官方網站伺服器
   - name: "HKIX-Hong-Kong-RS"
-    ip: "123.255.90.1"        # [更新] 嘗試 HKIX 閘道
+    ip: "137.189.6.51"        # [更新] HKIX 網站 (由香港中大託管，可 Ping)
 
   # --- 世界前 3 大 CDN 業者 (Top 3 Global CDNs) ---
   - name: "---"
   - name: "Cloudflare-Anycast"
     ip: "1.1.1.1"
-  - name: "Quad9-Edge-DNS"    # [更新] Akamai 邊緣常禁 Ping，改用非常穩定的 Quad9 測試
+  - name: "Quad9-Edge-DNS"
     ip: "9.9.9.9"
   - name: "Fastly-Anycast"
     ip: "151.101.1.57"
@@ -46,47 +46,47 @@ devices:
     ip: "198.41.0.4"
 
   # --- 台灣前 10 大 ISP (Top 10 Taiwan ISPs) ---
-  # 若 DNS 禁 Ping，通常改為 .254 或其官方對外主機
+  # 若網關 (.1) 禁 Ping，通常改為次要 DNS (.2 / .30) 或對外主機
   - name: "---"
   - name: "HiNet-Chunghwa"
     ip: "168.95.1.1"
   - name: "Seednet-FET"
     ip: "139.175.1.1"
   - name: "TWM-Taiwan-Fixed"
-    ip: "61.31.233.1"         # [更新] 台灣大哥大/台固次要 DNS
+    ip: "61.31.233.1"
   - name: "Kbro-Cable-Net"
-    ip: "203.79.224.29"       # [更新] 凱擘替代 DNS
+    ip: "203.79.224.30"       # [更新] 凱擘次要 DNS
   - name: "Homeplus-CNS"
-    ip: "219.84.1.1"          # [更新] 中嘉寬頻替代節點
+    ip: "219.85.253.1"        # [更新] 中嘉寬頻 DNS
   - name: "TBC-Broadband"
-    ip: "211.73.161.5"        # [更新] 台灣寬頻替代節點
+    ip: "211.73.161.6"        # [更新] 台灣寬頻次要 DNS
   - name: "So-net-Taiwan"
     ip: "61.64.127.2"
   - name: "APTG-Telecom"
-    ip: "210.200.211.225"     # [更新] 亞太電信 DNS
+    ip: "210.200.211.225"
   - name: "Vee-Time"
-    ip: "210.59.250.1"        # [更新] 威達替代節點
+    ip: "210.59.250.2"        # [更新] 威達次要 DNS
   - name: "D-V-O-Taiwan"
     ip: "123.240.1.1"
 
   # --- 台灣學術網路 (TANet Backbone) ---
   - name: "---"
   - name: "TANet-MOE-DNS"
-    ip: "140.111.1.1"         # [更新] 教育部主 DNS
+    ip: "140.111.1.2"         # [更新] 教育部主 DNS (避開 .1 網關)
   - name: "TANet-NTU-DNS"
-    ip: "140.112.254.4"
+    ip: "140.112.254.4"       # [維持] 台大這組有通
   - name: "TANet-NYCU-DNS"
-    ip: "140.113.1.1"         # [更新] 陽明交通大學核心 DNS
+    ip: "140.113.1.2"         # [更新] 陽明交通大學 DNS
   - name: "TANet-NTHU-DNS"
-    ip: "140.114.1.1"         # [更新] 清華大學核心 DNS
+    ip: "140.114.63.1"        # [更新] 清華大學對外 DNS
   - name: "TANet-NCKU-DNS"
-    ip: "140.116.2.1"         # [更新] 成功大學核心 DNS
+    ip: "140.116.2.6"         # [更新] 成功大學對外 DNS
 
   # --- 台灣二類電信與 IDC 業者 (Taiwan Type II / IDC) ---
   - name: "---"
   - name: "Chief-Telecom-IDC"
-    ip: "210.65.1.2"          # [更新] 是方電信替代 DNS
+    ip: "210.65.1.1"          # [更新] 是方電信主 DNS (原 .2 擋 Ping)
   - name: "NCHC-TWAREN"
-    ip: "140.110.16.1"        # [更新] 國網中心替代節點
+    ip: "140.110.16.2"        # [更新] 國網中心次要 DNS
   - name: "Google-IDC-Taiwan"
-    ip: "34.80.0.1"           # [更新] GCP 台灣彰濱機房 (asia-east1) 的有效 IP
+    ip: "142.251.43.3"        # [更新] Google 台灣 (google.com.tw) 實體主機 IP
