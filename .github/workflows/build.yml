@@ -6,11 +6,15 @@ on:
     tags: [ 'v*' ]
     paths-ignore:
       - '**/*.md'
+      - '**/*.yaml'
+      - '**/*.yml'
       - '.gitignore'
   pull_request:
     branches: [ main ]
     paths-ignore:
       - '**/*.md'
+      - '**/*.yaml'
+      - '**/*.yml'
       - '.gitignore'
   workflow_dispatch: # <--- 加入這一行，開啟手動觸發開關
     
