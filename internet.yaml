@@ -1,7 +1,8 @@
 scale: 10
 interval: 1s
+jitter: 0.1
 devices:
-# --- 世界前 5 大 ISP 業者 (Top 5 Global Tier-1 ISPs) ---
+  # --- 世界前 5 大 ISP 業者 (Top 5 Global Tier-1 ISPs) ---
   - name: "Lumen-Level3"
     ip: "4.2.2.1"
   - name: "NTT-Communications"
@@ -9,25 +10,33 @@ devices:
   - name: "Telia-Arelion"
     ip: "62.115.146.197"
   - name: "GTT-Global-Core"
-    ip: "208.51.135.53"       # [更新] GTT 官方 DNS (原網關擋 Ping)
+    ip: "208.51.135.53"
   - name: "Tata-Global-Network"
-    ip: "121.244.0.3"         # [更新] Tata 公用 DNS 
+    ip: "121.244.0.3"
+
+  # --- 三大公有雲 Anycast 入口 (Top 3 Public Clouds) ---
+  - name: "---"
+  - name: "GCP-Anycast-DNS"
+    ip: "8.8.8.8"           # Google 全球 Anycast 標竿
+  - name: "AWS-Global-Accel"
+    ip: "15.197.142.173"    # AWS Global Accelerator Anycast 入口
+  - name: "Azure-MS-Edge"
+    ip: "13.107.246.10"     # Microsoft/Azure 全球邊緣網路節點
 
   # --- 世界前 5 大 IX 業者 (Top 5 Global IXPs) ---
-  # 註：IXP 內部 Route Server 常禁 Ping，改用其公開網站或 NTP IP 較穩
   - name: "---"
   - name: "DE-CIX-Frankfurt"
-    ip: "80.81.192.11"        # [更新] DE-CIX Route Server 1 (這台通常允許 Ping)
+    ip: "80.81.192.11"
   - name: "AMS-IX-Amsterdam"
-    ip: "195.69.144.66"       # [更新] AMS-IX 官方 NTP 伺服器
+    ip: "195.69.144.66"
   - name: "LINX-London-RS"
-    ip: "195.66.225.254"      # [維持] 你圖片中這個是白色的，有通
+    ip: "195.66.225.254"
   - name: "Equinix-Ashburn-RS"
-    ip: "199.204.137.100"     # [更新] Equinix 官方網站伺服器
+    ip: "199.204.137.100"
   - name: "HKIX-Hong-Kong-RS"
-    ip: "137.189.6.51"        # [更新] HKIX 網站 (由香港中大託管，可 Ping)
+    ip: "137.189.6.51"
 
-  # --- 世界前 3 大 CDN 業者 (Top 3 Global CDNs) ---
+  # --- 全球 Anycast DNS & CDN 標竿 (Global Anycast Benchmarks) ---
   - name: "---"
   - name: "Cloudflare-Anycast"
     ip: "1.1.1.1"
@@ -35,6 +44,10 @@ devices:
     ip: "9.9.9.9"
   - name: "Fastly-Anycast"
     ip: "151.101.1.57"
+  - name: "Cisco-OpenDNS"
+    ip: "208.67.222.222"
+  - name: "AliDNS-Anycast"
+    ip: "223.5.5.5"
 
   # --- 世界的 BGP 登記業者 (Global BGP Backbone) ---
   - name: "---"
@@ -46,7 +59,6 @@ devices:
     ip: "198.41.0.4"
 
   # --- 台灣前 10 大 ISP (Top 10 Taiwan ISPs) ---
-  # 若網關 (.1) 禁 Ping，通常改為次要 DNS (.2 / .30) 或對外主機
   - name: "---"
   - name: "HiNet-Chunghwa"
     ip: "168.95.1.1"
@@ -55,38 +67,38 @@ devices:
   - name: "TWM-Taiwan-Fixed"
     ip: "61.31.233.1"
   - name: "Kbro-Cable-Net"
-    ip: "203.79.224.30"       # [更新] 凱擘次要 DNS
+    ip: "203.79.224.30"
   - name: "Homeplus-CNS"
-    ip: "219.85.253.1"        # [更新] 中嘉寬頻 DNS
+    ip: "219.85.253.1"
   - name: "TBC-Broadband"
-    ip: "211.73.161.6"        # [更新] 台灣寬頻次要 DNS
+    ip: "211.73.161.6"
   - name: "So-net-Taiwan"
     ip: "61.64.127.2"
   - name: "APTG-Telecom"
     ip: "210.200.211.225"
   - name: "Vee-Time"
-    ip: "210.59.250.2"        # [更新] 威達次要 DNS
+    ip: "210.59.250.2"
   - name: "D-V-O-Taiwan"
     ip: "123.240.1.1"
 
   # --- 台灣學術網路 (TANet Backbone) ---
   - name: "---"
   - name: "TANet-MOE-DNS"
-    ip: "140.111.1.2"         # [更新] 教育部主 DNS (避開 .1 網關)
+    ip: "140.111.1.2"
   - name: "TANet-NTU-DNS"
-    ip: "140.112.254.4"       # [維持] 台大這組有通
+    ip: "140.112.254.4"
   - name: "TANet-NYCU-DNS"
-    ip: "140.113.1.2"         # [更新] 陽明交通大學 DNS
+    ip: "140.113.1.2"
   - name: "TANet-NTHU-DNS"
-    ip: "140.114.63.1"        # [更新] 清華大學對外 DNS
+    ip: "140.114.63.1"
   - name: "TANet-NCKU-DNS"
-    ip: "140.116.2.6"         # [更新] 成功大學對外 DNS
+    ip: "140.116.2.6"
 
   # --- 台灣二類電信與 IDC 業者 (Taiwan Type II / IDC) ---
   - name: "---"
   - name: "Chief-Telecom-IDC"
-    ip: "210.65.1.1"          # [更新] 是方電信主 DNS (原 .2 擋 Ping)
+    ip: "210.65.1.1"
   - name: "NCHC-TWAREN"
-    ip: "140.110.16.2"        # [更新] 國網中心次要 DNS
+    ip: "140.110.16.2"
   - name: "Google-IDC-Taiwan"
-    ip: "142.251.43.3"        # [更新] Google 台灣 (google.com.tw) 實體主機 IP
+    ip: "142.251.43.3"
