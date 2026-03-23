@@ -1,4 +1,5 @@
 # go-deadman 💀
+![go-deadman screenshot](./screenshot.jpg)
 
 A high-performance, event-driven Terminal UI (TUI) application for monitoring network latency, jitter, and packet loss via ICMP ping. Built with Go, [Bubble Tea](https://github.com/charmbracelet/bubbletea), and [pro-bing](https://github.com/prometheus-community/pro-bing).
 
