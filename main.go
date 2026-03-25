@@ -1,3 +1,4 @@
+
 package main
 
 // 加入這行自動化指令
@@ -68,7 +69,7 @@ type Device struct {
 	AvgRTT     float64
 	Jitter     float64
 	Window     []float64
-	WindowSum  float64
+	WindowSum  float64  // 增量維護滑動視窗累計值，讓 AvgRTT 從 O(N) 降為 O(1)
 	LossRate   float64
 	History    [HIST_SIZE]Heartbeat
 	HistoryIdx int
@@ -136,41 +137,42 @@ func getLogChar(rtt float64, success bool) string {
 }
 
 
-func (d *Device) UpdateStats(rtt float64, success bool) {
+func (d *Device) UpdateStats(rtt float64, success bool, isNative bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	
-    d.IsNative = isNative
-    d.Loading = false
-	
+
+	// ✅ 建議三：在同一把鎖內更新所有狀態，消除外部冗餘的 Lock/Unlock
+	d.IsNative = isNative
+	d.Loading = false
+
 	d.Snt++
 	if !success {
 		d.Loss++
 	} else {
-        d.LastRTT = rtt
-        // ✅ 建議一：增量維護 WindowSum，AvgRTT 計算從 O(N) 降為 O(1)
-        if len(d.Window) >= WINDOW_SIZE {
-            d.WindowSum -= d.Window[0]  // 減去即將移除的最舊值
-            d.Window = d.Window[1:]
-        }
-        d.Window = append(d.Window, rtt)
-        d.WindowSum += rtt
-        d.AvgRTT = d.WindowSum / float64(len(d.Window))
+		d.LastRTT = rtt
 
-        // Jitter 維持原本 O(N) 邏輯，改動最小
-        if len(d.Window) >= 2 {
-            var jitterSum float64
-            for i := 1; i < len(d.Window); i++ {
-                jitterSum += math.Abs(d.Window[i] - d.Window[i-1])
-            }
-            d.Jitter = jitterSum / float64(len(d.Window)-1)
-        } else {
-            d.Jitter = 0.0
-        }
+		// ✅ 建議一：增量維護 WindowSum，AvgRTT 從 O(N) 降為 O(1)
+		if len(d.Window) >= WINDOW_SIZE {
+			d.WindowSum -= d.Window[0]
+			d.Window = d.Window[1:]
+		}
+		d.Window = append(d.Window, rtt)
+		d.WindowSum += rtt
+		d.AvgRTT = d.WindowSum / float64(len(d.Window))
+
+		if len(d.Window) >= 2 {
+			var jitterSum float64
+			for i := 1; i < len(d.Window); i++ {
+				jitterSum += math.Abs(d.Window[i] - d.Window[i-1])
+			}
+			d.Jitter = jitterSum / float64(len(d.Window)-1)
+		} else {
+			d.Jitter = 0.0
+		}
 	}
 	if d.Snt > 0 {
-        d.LossRate = (float64(d.Loss) * 100.0) / float64(d.Snt)
-    }
+		d.LossRate = (float64(d.Loss) * 100.0) / float64(d.Snt)
+	}
 
 	char := getLogChar(rtt, success)
 	d.History[d.HistoryIdx] = Heartbeat{Char: char, Success: success}
@@ -184,55 +186,45 @@ func (d *Device) UpdateStats(rtt float64, success bool) {
 // 網路層邏輯：事件驅動與連線重用 (Option A)
 // ---------------------------------------------------------
 
-// ---------------------------------------------------------
-// 網路層邏輯：事件驅動與連線重用 (Option A)
-// ---------------------------------------------------------
 func resolveAndStartWorker(d *Device, interval time.Duration, jitter float64) {
-    d.mu.RLock()
-    rawName, rawIP := d.Name, d.IP
-    d.mu.RUnlock()
+	d.mu.RLock()
+	rawName, rawIP := d.Name, d.IP
+	d.mu.RUnlock()
 
-    name := strings.TrimSpace(rawName)
-    ip := strings.TrimSpace(rawIP)
-    isFail := false
+	name := strings.TrimSpace(rawName)
+	ip := strings.TrimSpace(rawIP)
+	isFail := false
 
-    // ✅ 修正：使用 net.Resolver + context.WithTimeout，避免 DNS 無回應時 goroutine 永久阻塞
-    resolver := &net.Resolver{}
+	if name == "" && ip != "" {
+		names, err := net.LookupAddr(ip)
+		if err == nil && len(names) > 0 {
+			name = strings.TrimSuffix(names[0], ".")
+		} else {
+			name = ip
+		}
+	} else if ip == "" && name != "" {
+		ips, err := net.LookupIP(name)
+		if err == nil && len(ips) > 0 {
+			ip = ips[0].String()
+		} else {
+			ip = "DNS_FAIL"
+			isFail = true
+		}
+	}
 
-    if name == "" && ip != "" {
-        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-        names, err := resolver.LookupAddr(ctx, ip)
-        cancel()
-        if err == nil && len(names) > 0 {
-            name = strings.TrimSuffix(names[0], ".")
-        } else {
-            name = ip
-        }
-    } else if ip == "" && name != "" {
-        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-        ips, err := resolver.LookupIPAddr(ctx, name)
-        cancel()
-        if err == nil && len(ips) > 0 {
-            ip = ips[0].IP.String()
-        } else {
-            ip = "DNS_FAIL"
-            isFail = true
-        }
-    }
+	name = truncate(name, 50) // 放寬解析時的字串長度，實際顯示時會動態截斷
+	ip = truncate(ip, 50)
 
-    name = truncate(name, 50)
-    ip = truncate(ip, 50)
+	d.mu.Lock()
+	d.Name = name
+	d.IP = ip
+	d.IsDNSFail = isFail
+	d.Loading = !isFail
+	d.mu.Unlock()
 
-    d.mu.Lock()
-    d.Name = name
-    d.IP = ip
-    d.IsDNSFail = isFail
-    d.Loading = !isFail
-    d.mu.Unlock()
-
-    if !isFail {
-        deviceWorker(d, ip, interval, jitter)
-    }
+	if !isFail {
+		deviceWorker(d, ip, interval, jitter)
+	}
 }
 
 func deviceWorker(d *Device, ip string, interval time.Duration, jitter float64) {
@@ -283,45 +275,50 @@ func deviceWorker(d *Device, ip string, interval time.Duration, jitter float64) 
 	timeoutDuration := interval + time.Second
 	timer := time.NewTimer(timeoutDuration)
 
-    for {
-        // ✅ 建議三：移除迴圈頂端冗餘的 Lock（d.Loading = true 改由 UpdateStats 內管理）
-        select {
-        case err := <-errCh:
-            if err != nil {
-                fallbackWorker(d, ip, interval, jitter)
-                return
-            }
-        case pkt := <-recvCh:
-            if pkt.Seq < expectedSeq {
-                continue
-            }
-            // 補齊連續掉包
-            for expectedSeq < pkt.Seq {
-                // ✅ 建議三：移除外部 Lock，直接呼叫，isNative=true
-                d.UpdateStats(0, false, true)
-                expectedSeq++
-            }
-            // 寫入成功數據
-            rtt := float64(pkt.Rtt.Nanoseconds()) / 1000000.0
-            // ✅ 建議三：移除外部 Lock，直接呼叫，isNative=true
-            d.UpdateStats(rtt, true, true)
-            expectedSeq = pkt.Seq + 1
+	for {
 
-            if !timer.Stop() {
-                select {
-                case <-timer.C:
-                default:
-                }
-            }
-            timer.Reset(timeoutDuration)
+		select {
+		case err := <-errCh:
+			if err != nil {
+				fallbackWorker(d, ip, interval, jitter)
+				return
+			}
 
-        case <-timer.C:
-            // ✅ 建議三：移除外部 Lock，直接呼叫，isNative=true
-            d.UpdateStats(0, false, true)
-            expectedSeq++
-            timer.Reset(interval)
-        }
-    }
+		case pkt := <-recvCh:
+			// 如果收到過遲的封包 (Seq 已經落後於預期)，代表已經被計為 Timeout，直接捨棄以確保圖表一致性
+			if pkt.Seq < expectedSeq {
+				continue
+			}
+
+			// 如果發生連續掉包，透過 Seq 的差距，立刻補齊遺失的歷史紀錄
+			for expectedSeq < pkt.Seq {
+				d.UpdateStats(0, false, true)
+				expectedSeq++
+			}
+
+			// 寫入當前成功數據
+			rtt := float64(pkt.Rtt.Nanoseconds()) / 1000000.0
+			d.UpdateStats(rtt, true, true)
+
+			expectedSeq = pkt.Seq + 1
+
+			// 精準重置超時定時器
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(timeoutDuration)
+
+		case <-timer.C:
+			// 觸發超時機制 (遺失封包)
+			d.UpdateStats(0, false, true)
+
+			expectedSeq++
+			timer.Reset(interval)
+		}
+	}
 }
 
 // ---------------------------------------------------------
@@ -370,12 +367,6 @@ func fallbackWorker(d *Device, ip string, interval time.Duration, jitter float64
 
 		rtt, success := parseRTT(outBuf.String())
 
-		//d.mu.Lock()
-		//d.Loading = false
-		//d.IsNative = false
-		//d.mu.Unlock()
-
-		//d.UpdateStats(rtt, success)
 		d.UpdateStats(rtt, success, false)
 
 		elapsed := time.Since(start)
@@ -560,19 +551,19 @@ func (m model) View() string {
 			displayIP = "resolving..."
 		}
 
-		// 修正：改用 switch，由小到大判斷，格式統一對齊至 5 字元
-		var lossStr string
-		switch {
-		case lossRate == 0:
-			lossStr = "   0%"   // 5 字元：3空格 + 0 + %
-		case lossRate < 0.01:
-			lossStr = "<.01%"   // 5 字元
-		case lossRate < 0.1:
-			lossStr = " <.1%"   // 5 字元：1空格 + <.1%
-		default:
-			lossStr = fmt.Sprintf("%3d%%", int(lossRate)) // 5 字元：如 " 10%" 或 "100%"
-		}
 
+		var lossStr string
+		if lossRate > 0 && lossRate < 0.1 {
+		    lossStr = "<.1%" // 如果掉包極小，顯示 <.1% (剛好 4 字元，補一個空格變 5 字元)
+		    // 如果你一定要 0.01 精度，可以用:
+		    if lossRate < 0.01 {
+		        lossStr = "<.01%" // 剛好 5 個字元：< . 0 1 %
+		    }
+		} else {
+		    // 一般情況：整數加上百分比符號，並控制在 4 個字元內
+		    // 例如 " 10%" 或 "100%"
+		    lossStr = fmt.Sprintf("%3d%%", int(lossRate)) 
+		}
 		// ⭐ 進行動態安全截斷
 		dispNameTrunc := truncate(displayName, colWidth)
 		dispIPTrunc := truncate(displayIP, colWidth)
