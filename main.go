@@ -68,7 +68,6 @@ type Device struct {
 	AvgRTT     float64
 	Jitter     float64
 	Window     []float64
-	WindowSum  float64
 	LossRate   float64
 	History    [HIST_SIZE]Heartbeat
 	HistoryIdx int
@@ -139,34 +138,32 @@ func getLogChar(rtt float64, success bool) string {
 func (d *Device) UpdateStats(rtt float64, success bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	
-    d.IsNative = isNative
-    d.Loading = false
-	
+
 	d.Snt++
 	if !success {
 		d.Loss++
 	} else {
-        d.LastRTT = rtt
-        // ✅ 建議一：增量維護 WindowSum，AvgRTT 計算從 O(N) 降為 O(1)
-        if len(d.Window) >= WINDOW_SIZE {
-            d.WindowSum -= d.Window[0]  // 減去即將移除的最舊值
-            d.Window = d.Window[1:]
-        }
-        d.Window = append(d.Window, rtt)
-        d.WindowSum += rtt
-        d.AvgRTT = d.WindowSum / float64(len(d.Window))
+		d.LastRTT = rtt
+		d.Window = append(d.Window, rtt)
+		if len(d.Window) > WINDOW_SIZE {
+			d.Window = d.Window[1:]
+		}
 
-        // Jitter 維持原本 O(N) 邏輯，改動最小
-        if len(d.Window) >= 2 {
-            var jitterSum float64
-            for i := 1; i < len(d.Window); i++ {
-                jitterSum += math.Abs(d.Window[i] - d.Window[i-1])
-            }
-            d.Jitter = jitterSum / float64(len(d.Window)-1)
-        } else {
-            d.Jitter = 0.0
-        }
+		var sum float64
+		for _, v := range d.Window {
+			sum += v
+		}
+		d.AvgRTT = sum / float64(len(d.Window))
+
+		if len(d.Window) >= 2 {
+			var jitterSum float64
+			for i := 1; i < len(d.Window); i++ {
+				jitterSum += math.Abs(d.Window[i] - d.Window[i-1])
+			}
+			d.Jitter = jitterSum / float64(len(d.Window)-1)
+		} else {
+			d.Jitter = 0.0
+		}
 	}
 	if d.Snt > 0 {
         d.LossRate = (float64(d.Loss) * 100.0) / float64(d.Snt)
@@ -283,45 +280,65 @@ func deviceWorker(d *Device, ip string, interval time.Duration, jitter float64) 
 	timeoutDuration := interval + time.Second
 	timer := time.NewTimer(timeoutDuration)
 
-    for {
-        // ✅ 建議三：移除迴圈頂端冗餘的 Lock（d.Loading = true 改由 UpdateStats 內管理）
-        select {
-        case err := <-errCh:
-            if err != nil {
-                fallbackWorker(d, ip, interval, jitter)
-                return
-            }
-        case pkt := <-recvCh:
-            if pkt.Seq < expectedSeq {
-                continue
-            }
-            // 補齊連續掉包
-            for expectedSeq < pkt.Seq {
-                // ✅ 建議三：移除外部 Lock，直接呼叫，isNative=true
-                d.UpdateStats(0, false, true)
-                expectedSeq++
-            }
-            // 寫入成功數據
-            rtt := float64(pkt.Rtt.Nanoseconds()) / 1000000.0
-            // ✅ 建議三：移除外部 Lock，直接呼叫，isNative=true
-            d.UpdateStats(rtt, true, true)
-            expectedSeq = pkt.Seq + 1
+	for {
+		d.mu.Lock()
+		d.Loading = true
+		d.mu.Unlock()
 
-            if !timer.Stop() {
-                select {
-                case <-timer.C:
-                default:
-                }
-            }
-            timer.Reset(timeoutDuration)
+		select {
+		case err := <-errCh:
+			if err != nil {
+				fallbackWorker(d, ip, interval, jitter)
+				return
+			}
 
-        case <-timer.C:
-            // ✅ 建議三：移除外部 Lock，直接呼叫，isNative=true
-            d.UpdateStats(0, false, true)
-            expectedSeq++
-            timer.Reset(interval)
-        }
-    }
+		case pkt := <-recvCh:
+			// 如果收到過遲的封包 (Seq 已經落後於預期)，代表已經被計為 Timeout，直接捨棄以確保圖表一致性
+			if pkt.Seq < expectedSeq {
+				continue
+			}
+
+			// 如果發生連續掉包，透過 Seq 的差距，立刻補齊遺失的歷史紀錄
+			for expectedSeq < pkt.Seq {
+				d.mu.Lock()
+				d.IsNative = true
+				d.Loading = false
+				d.mu.Unlock()
+				d.UpdateStats(0, false)
+				expectedSeq++
+			}
+
+			// 寫入當前成功數據
+			rtt := float64(pkt.Rtt.Nanoseconds()) / 1000000.0
+			d.mu.Lock()
+			d.IsNative = true
+			d.Loading = false
+			d.mu.Unlock()
+			d.UpdateStats(rtt, true)
+
+			expectedSeq = pkt.Seq + 1
+
+			// 精準重置超時定時器
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(timeoutDuration)
+
+		case <-timer.C:
+			// 觸發超時機制 (遺失封包)
+			d.mu.Lock()
+			d.IsNative = true
+			d.Loading = false
+			d.mu.Unlock()
+			d.UpdateStats(0, false)
+
+			expectedSeq++
+			timer.Reset(interval)
+		}
+	}
 }
 
 // ---------------------------------------------------------
@@ -370,13 +387,12 @@ func fallbackWorker(d *Device, ip string, interval time.Duration, jitter float64
 
 		rtt, success := parseRTT(outBuf.String())
 
-		//d.mu.Lock()
-		//d.Loading = false
-		//d.IsNative = false
-		//d.mu.Unlock()
+		d.mu.Lock()
+		d.Loading = false
+		d.IsNative = false
+		d.mu.Unlock()
 
-		//d.UpdateStats(rtt, success)
-		d.UpdateStats(rtt, success, false)
+		d.UpdateStats(rtt, success)
 
 		elapsed := time.Since(start)
 		baseWait := float64(interval) - float64(elapsed)
