@@ -181,45 +181,55 @@ func (d *Device) UpdateStats(rtt float64, success bool) {
 // 網路層邏輯：事件驅動與連線重用 (Option A)
 // ---------------------------------------------------------
 
+// ---------------------------------------------------------
+// 網路層邏輯：事件驅動與連線重用 (Option A)
+// ---------------------------------------------------------
 func resolveAndStartWorker(d *Device, interval time.Duration, jitter float64) {
-	d.mu.RLock()
-	rawName, rawIP := d.Name, d.IP
-	d.mu.RUnlock()
+    d.mu.RLock()
+    rawName, rawIP := d.Name, d.IP
+    d.mu.RUnlock()
 
-	name := strings.TrimSpace(rawName)
-	ip := strings.TrimSpace(rawIP)
-	isFail := false
+    name := strings.TrimSpace(rawName)
+    ip := strings.TrimSpace(rawIP)
+    isFail := false
 
-	if name == "" && ip != "" {
-		names, err := net.LookupAddr(ip)
-		if err == nil && len(names) > 0 {
-			name = strings.TrimSuffix(names[0], ".")
-		} else {
-			name = ip
-		}
-	} else if ip == "" && name != "" {
-		ips, err := net.LookupIP(name)
-		if err == nil && len(ips) > 0 {
-			ip = ips[0].String()
-		} else {
-			ip = "DNS_FAIL"
-			isFail = true
-		}
-	}
+    // ✅ 修正：使用 net.Resolver + context.WithTimeout，避免 DNS 無回應時 goroutine 永久阻塞
+    resolver := &net.Resolver{}
 
-	name = truncate(name, 50) // 放寬解析時的字串長度，實際顯示時會動態截斷
-	ip = truncate(ip, 50)
+    if name == "" && ip != "" {
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        names, err := resolver.LookupAddr(ctx, ip)
+        cancel()
+        if err == nil && len(names) > 0 {
+            name = strings.TrimSuffix(names[0], ".")
+        } else {
+            name = ip
+        }
+    } else if ip == "" && name != "" {
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        ips, err := resolver.LookupIPAddr(ctx, name)
+        cancel()
+        if err == nil && len(ips) > 0 {
+            ip = ips[0].IP.String()
+        } else {
+            ip = "DNS_FAIL"
+            isFail = true
+        }
+    }
 
-	d.mu.Lock()
-	d.Name = name
-	d.IP = ip
-	d.IsDNSFail = isFail
-	d.Loading = !isFail
-	d.mu.Unlock()
+    name = truncate(name, 50)
+    ip = truncate(ip, 50)
 
-	if !isFail {
-		deviceWorker(d, ip, interval, jitter)
-	}
+    d.mu.Lock()
+    d.Name = name
+    d.IP = ip
+    d.IsDNSFail = isFail
+    d.Loading = !isFail
+    d.mu.Unlock()
+
+    if !isFail {
+        deviceWorker(d, ip, interval, jitter)
+    }
 }
 
 func deviceWorker(d *Device, ip string, interval time.Duration, jitter float64) {
@@ -566,19 +576,19 @@ func (m model) View() string {
 			displayIP = "resolving..."
 		}
 
-
+		// 修正：改用 switch，由小到大判斷，格式統一對齊至 5 字元
 		var lossStr string
-		if lossRate > 0 && lossRate < 0.1 {
-		    lossStr = "<.1%" // 如果掉包極小，顯示 <.1% (剛好 4 字元，補一個空格變 5 字元)
-		    // 如果你一定要 0.01 精度，可以用:
-		    if lossRate < 0.01 {
-		        lossStr = "<.01%" // 剛好 5 個字元：< . 0 1 %
-		    }
-		} else {
-		    // 一般情況：整數加上百分比符號，並控制在 4 個字元內
-		    // 例如 " 10%" 或 "100%"
-		    lossStr = fmt.Sprintf("%3d%%", int(lossRate)) 
+		switch {
+		case lossRate == 0:
+			lossStr = "   0%"   // 5 字元：3空格 + 0 + %
+		case lossRate < 0.01:
+			lossStr = "<.01%"   // 5 字元
+		case lossRate < 0.1:
+			lossStr = " <.1%"   // 5 字元：1空格 + <.1%
+		default:
+			lossStr = fmt.Sprintf("%3d%%", int(lossRate)) // 5 字元：如 " 10%" 或 "100%"
 		}
+
 		// ⭐ 進行動態安全截斷
 		dispNameTrunc := truncate(displayName, colWidth)
 		dispIPTrunc := truncate(displayIP, colWidth)
