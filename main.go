@@ -344,7 +344,7 @@ func fallbackWorker(d *Device, ip string, interval time.Duration, jitter float64
 		if net.ParseIP(ip) == nil {
 			// 如果不是合法 IP，可能是域名或非法字串。
 			// 雖然先前 resolve 已經處理過，但為了 Gosec 審核與安全，此處必須顯式檢查。
-			d.UpdateStats(0, false)
+			d.UpdateStats(0, false, false)
 			time.Sleep(interval)
 			continue
 		}
