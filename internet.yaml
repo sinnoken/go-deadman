@@ -10,31 +10,31 @@ devices:
   - name: "Telia-Arelion"
     ip: "62.115.146.197"
   - name: "GTT-Global-Core"
-    ip: "213.200.64.71"       # [更新] GTT 歐洲 DNS
+    ip: "213.200.77.254"      # [更新] GTT 骨幹節點 (替代 DNS)
   - name: "Tata-Global-Network"
-    ip: "64.86.0.1"           # [更新] Tata/Teleglobe 核心網段
+    ip: "216.6.87.14"         # [更新] Tata 路由測試伺服器 (Looking Glass)
 
   # --- 三大公有雲 Anycast 入口 (Top 3 Public Clouds) ---
   - name: "---"
   - name: "GCP-Anycast-DNS"
-    ip: "8.8.8.8"            # Google 全球 Anycast 標竿
+    ip: "8.8.8.8"
   - name: "AWS-Global-Accel"
-    ip: "15.197.142.173"     # AWS Global Accelerator Anycast 入口
+    ip: "15.197.142.173"
   - name: "Azure-MS-Edge"
-    ip: "204.79.197.200"     # [更新] 微軟 Edge/Bing Anycast (極穩不擋 Ping)
+    ip: "204.79.197.200"
 
   # --- 世界前 5 大 IX 業者 (Top 5 Global IXPs) ---
   - name: "---"
   - name: "DE-CIX-Frankfurt"
-    ip: "80.81.192.1"        # [更新] DE-CIX 網關 (Route Server 通常擋 Ping)
+    ip: "80.81.192.110"       # [更新] DE-CIX 官網與管理網段
   - name: "AMS-IX-Amsterdam"
-    ip: "195.69.144.11"      # [更新] AMS-IX 測試節點
+    ip: "195.69.144.11"
   - name: "LINX-London-RS"
     ip: "195.66.225.254"
   - name: "Equinix-Ashburn-RS"
-    ip: "199.204.137.1"      # [更新] Equinix Ashburn 網關
-  - name: "HKIX-Hong-Kong-RS"
-    ip: "137.189.6.1"        # [更新] HKIX 網關
+    ip: "199.204.137.1"
+  - name: "HKIX-Hong-Kong"
+    ip: "137.189.6.21"        # [更新] HKIX/香港中文大學 (CUHK) 網路主機
 
   # --- 全球 Anycast DNS & CDN 標竿 (Global Anycast Benchmarks) ---
   - name: "---"
@@ -69,7 +69,7 @@ devices:
   - name: "Kbro-Cable-Net"
     ip: "203.79.224.30"
   - name: "Homeplus-CNS"
-    ip: "219.85.253.211"     # [更新] 中嘉寬頻 (CNS) 官方 DNS
+    ip: "219.85.253.253"      # [更新] 中嘉寬頻 (CNS) 官方主 DNS (253 結尾較穩)
   - name: "TBC-Broadband"
     ip: "211.73.161.6"
   - name: "So-net-Taiwan"
@@ -77,28 +77,26 @@ devices:
   - name: "APTG-Telecom"
     ip: "210.200.211.225"
   - name: "Vee-Time"
-    ip: "210.59.250.1"       # [更新] 威達雲端核心網關
-  - name: "D-V-O-Taiwan"
-    ip: "123.240.1.1"
+    ip: "210.59.1.1"          # [更新] 威達雲端官方主 DNS
 
   # --- 台灣學術網路 (TANet Backbone) ---
   - name: "---"
-  - name: "TANet-MOE-DNS"
-    ip: "140.111.1.1"        # [更新] 教育部網關 (原 DNS 擋 Ping)
+  - name: "TANet-MOE-WWW"
+    ip: "140.111.14.180"      # [更新] 教育部全球資訊網 (www.edu.tw)
   - name: "TANet-NTU-DNS"
-    ip: "140.112.254.4"
-  - name: "TANet-NYCU-DNS"
-    ip: "140.113.1.1"        # [更新] 陽明交大網關
-  - name: "TANet-NTHU-DNS"
-    ip: "140.114.1.1"        # [更新] 清大網關
-  - name: "TANet-NCKU-DNS"
-    ip: "140.116.2.1"        # [更新] 成大網關
+    ip: "140.112.254.4"       # (維持綠字)
+  - name: "TANet-NYCU-WWW"
+    ip: "140.113.250.135"     # [更新] 陽明交大官方首頁 (www.nycu.edu.tw)
+  - name: "TANet-NTHU-WWW"
+    ip: "140.114.90.136"      # [更新] 清華大學官方首頁 (www.nthu.edu.tw)
+  - name: "TANet-NCKU-WWW"
+    ip: "140.116.250.3"       # [更新] 成功大學官方首頁 (www.ncku.edu.tw)
 
   # --- 台灣二類電信與 IDC 業者 (Taiwan Type II / IDC) ---
   - name: "---"
-  - name: "Chief-Telecom-IDC"
-    ip: "210.65.1.2"         # [更新] 是方電訊次要 DNS
-  - name: "NCHC-TWAREN"
-    ip: "140.110.16.1"       # [更新] 國網中心網關
+  - name: "Chief-Telecom-WWW"
+    ip: "210.65.1.135"        # [更新] 是方電訊官方首頁 (www.chief.com.tw)
+  - name: "NCHC-TWAREN-WWW"
+    ip: "140.110.16.100"      # [更新] 國研院國網中心 TWAREN 官網 (www.twaren.net)
   - name: "Google-IDC-Taiwan"
     ip: "142.251.43.3"
