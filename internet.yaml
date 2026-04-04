@@ -10,9 +10,9 @@ devices:
   - name: "Telia-Arelion"
     ip: "62.115.146.197"
   - name: "GTT-Global-Core"
-    ip: "213.200.64.94"       # [更新] 改用 GTT DNS，原網段已阻擋 ICMP
+    ip: "213.200.64.94"       # (維持綠字)
   - name: "Tata-Global-Network"
-    ip: "216.6.86.11"         # [更新] 改用 Tata 官方 DNS，原 LG 節點已阻擋 ICMP
+    ip: "64.86.108.1"         # [更新] 改用 Tata 美國骨幹路由器 IP
 
   # --- 三大公有雲 Anycast 入口 (Top 3 Public Clouds) ---
   - name: "---"
@@ -26,7 +26,7 @@ devices:
   # --- 世界前 5 大 IX 業者 (Top 5 Global IXPs) ---
   - name: "---"
   - name: "DE-CIX-Frankfurt"
-    ip: "80.81.192.146"       # [更新] 改用 DE-CIX 官方 NTP 伺服器 (ntp.de-cix.net)
+    ip: "80.81.192.1"         # [更新] 改用 DE-CIX 核心 Route Server 1
   - name: "AMS-IX-Amsterdam"
     ip: "195.69.144.11"
   - name: "LINX-London-RS"
@@ -69,34 +69,34 @@ devices:
   - name: "Kbro-Cable-Net"
     ip: "203.79.224.30"
   - name: "Homeplus-CNS"
-    ip: "219.84.253.253"      # [更新] 改用 CNS 另一組主 DNS (原 253 結尾已擋 ping)
+    ip: "219.85.1.1"          # [更新] 嘗試中嘉 CNS 網段閘道器
   - name: "TBC-Broadband"
-    ip: "211.73.161.5"        # [更新] 改用 TBC 另一組 DNS (原 6 結尾已擋 ping)
+    ip: "211.73.161.1"        # [更新] 嘗試 TBC 網段閘道器
   - name: "So-net-Taiwan"
     ip: "61.64.127.2"
   - name: "APTG-Telecom"
     ip: "210.200.211.225"
   - name: "Vee-Time"
-    ip: "210.59.1.1"          
+    ip: "210.59.1.1"          # (有少許掉包但可通，維持原樣)
 
   # --- 台灣學術網路 (TANet Backbone) ---
   - name: "---"
-  - name: "TANet-MOE-DNS"
-    ip: "140.111.1.2"         # [更新] 教育部主 DNS (原 WWW 伺服器已擋 ping)
+  - name: "TANet-MOE-GW"
+    ip: "140.111.1.1"         # [更新] 教育部骨幹閘道器 (.1)
   - name: "TANet-NTU-DNS"
-    ip: "140.112.254.4"       # (維持綠字)
-  - name: "TANet-NYCU-DNS"
-    ip: "140.113.1.1"         # [更新] 陽明交大主 DNS (原 WWW 伺服器已擋 ping)
-  - name: "TANet-NTHU-DNS"
-    ip: "140.114.63.1"        # [更新] 清華大學主 DNS (原 WWW 伺服器已擋 ping)
-  - name: "TANet-NCKU-DNS"
-    ip: "140.116.2.6"         # [更新] 成功大學主 DNS (原 WWW 伺服器已擋 ping)
+    ip: "140.112.254.4"       # (台大很友善，維持綠字)
+  - name: "TANet-NYCU-GW"
+    ip: "140.113.250.1"       # [更新] 交大骨幹閘道器 (.1)
+  - name: "TANet-NTHU-GW"
+    ip: "140.114.90.1"        # [更新] 清大骨幹閘道器 (.1)
+  - name: "TANet-NCKU-GW"
+    ip: "140.116.250.1"       # [更新] 成大骨幹閘道器 (.1)
 
   # --- 台灣二類電信與 IDC 業者 (Taiwan Type II / IDC) ---
   - name: "---"
-  - name: "Chief-Telecom-DNS"
-    ip: "210.65.1.1"          # [更新] 是方電訊主 DNS (原 WWW 伺服器已擋 ping)
-  - name: "NCHC-TWAREN-DNS"
-    ip: "140.110.16.1"        # [更新] 國網中心 TWAREN 主 DNS (原 WWW 伺服器已擋 ping)
+  - name: "Chief-Telecom-GW"
+    ip: "210.65.1.254"        # [更新] 是方電訊閘道器 (.254)
+  - name: "NCHC-TWAREN-GW"
+    ip: "140.110.16.254"      # [更新] 國網中心 TWAREN 閘道器 (.254)
   - name: "Google-IDC-Taiwan"
     ip: "142.251.43.3"
