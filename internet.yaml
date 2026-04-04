@@ -2,7 +2,7 @@ scale: 10
 interval: 1s
 jitter: 0.1
 devices:
-  # --- 世界前 5 大 ISP 業者 (Top 5 Global Tier-1 ISPs) ---
+  # --- 世界前 5 大 ISP 業者 ---
   - name: "Lumen-Level3"
     ip: "4.2.2.1"
   - name: "NTT-Communications"
@@ -10,11 +10,11 @@ devices:
   - name: "Telia-Arelion"
     ip: "62.115.146.197"
   - name: "GTT-Global-Core"
-    ip: "213.200.64.94"       # (維持綠字)
-  - name: "Tata-Global-Network"
-    ip: "64.86.108.1"         # [更新] 改用 Tata 美國骨幹路由器 IP
+    ip: "213.200.64.94"       
+  - name: "Telstra-Global"    # [新增] 替換 Tata，澳洲與亞太頂級骨幹
+    ip: "139.130.4.4"
 
-  # --- 三大公有雲 Anycast 入口 (Top 3 Public Clouds) ---
+  # --- 三大公有雲 Anycast 入口 ---
   - name: "---"
   - name: "GCP-Anycast-DNS"
     ip: "8.8.8.8"
@@ -23,10 +23,10 @@ devices:
   - name: "Azure-MS-Edge"
     ip: "204.79.197.200"
 
-  # --- 世界前 5 大 IX 業者 (Top 5 Global IXPs) ---
+  # --- 世界前 5 大 IX 業者與亞太骨幹 ---
   - name: "---"
-  - name: "DE-CIX-Frankfurt"
-    ip: "80.81.192.1"         # [更新] 改用 DE-CIX 核心 Route Server 1
+  - name: "PCCW-Global-HK"    # [新增] 替換 DE-CIX，亞洲最大 Tier-1 骨幹
+    ip: "63.218.0.1"
   - name: "AMS-IX-Amsterdam"
     ip: "195.69.144.11"
   - name: "LINX-London-RS"
@@ -34,9 +34,9 @@ devices:
   - name: "Equinix-Ashburn-RS"
     ip: "199.204.137.1"
   - name: "HKIX-Hong-Kong"
-    ip: "137.189.6.21"        
+    ip: "137.189.6.21"
 
-  # --- 全球 Anycast DNS & CDN 標竿 (Global Anycast Benchmarks) ---
+  # --- 全球 Anycast DNS & CDN 標竿 ---
   - name: "---"
   - name: "Cloudflare-Anycast"
     ip: "1.1.1.1"
@@ -49,7 +49,7 @@ devices:
   - name: "AliDNS-Anycast"
     ip: "223.5.5.5"
 
-  # --- 世界的 BGP 登記業者 (Global BGP Backbone) ---
+  # --- 世界的 BGP 登記業者 ---
   - name: "---"
   - name: "Hurricane-Electric"
     ip: "74.82.42.42"
@@ -58,7 +58,7 @@ devices:
   - name: "Verisign-Root"
     ip: "198.41.0.4"
 
-  # --- 台灣前 10 大 ISP (Top 10 Taiwan ISPs) ---
+  # --- 台灣主要 ISP 業者 ---
   - name: "---"
   - name: "HiNet-Chunghwa"
     ip: "168.95.1.1"
@@ -69,34 +69,19 @@ devices:
   - name: "Kbro-Cable-Net"
     ip: "203.79.224.30"
   - name: "Homeplus-CNS"
-    ip: "219.85.1.1"          # [更新] 嘗試中嘉 CNS 網段閘道器
-  - name: "TBC-Broadband"
-    ip: "211.73.161.1"        # [更新] 嘗試 TBC 網段閘道器
-  - name: "So-net-Taiwan"
+    ip: "219.85.1.1"          # (中嘉成功通訊，維持此設定)
+  - name: "So-net-Taiwan"     # (已移除擋 Ping 的 TBC)
     ip: "61.64.127.2"
   - name: "APTG-Telecom"
     ip: "210.200.211.225"
   - name: "Vee-Time"
-    ip: "210.59.1.1"          # (有少許掉包但可通，維持原樣)
+    ip: "210.59.1.1"
 
-  # --- 台灣學術網路 (TANet Backbone) ---
+  # --- 台灣公共基礎建設與重要節點 ---
   - name: "---"
-  - name: "TANet-MOE-GW"
-    ip: "140.111.1.1"         # [更新] 教育部骨幹閘道器 (.1)
+  - name: "TWNIC-Quad101"     # [新增] 台灣網路資訊中心 (TWNIC) 官方 DNS，極度穩定
+    ip: "101.101.101.101"
   - name: "TANet-NTU-DNS"
-    ip: "140.112.254.4"       # (台大很友善，維持綠字)
-  - name: "TANet-NYCU-GW"
-    ip: "140.113.250.1"       # [更新] 交大骨幹閘道器 (.1)
-  - name: "TANet-NTHU-GW"
-    ip: "140.114.90.1"        # [更新] 清大骨幹閘道器 (.1)
-  - name: "TANet-NCKU-GW"
-    ip: "140.116.250.1"       # [更新] 成大骨幹閘道器 (.1)
-
-  # --- 台灣二類電信與 IDC 業者 (Taiwan Type II / IDC) ---
-  - name: "---"
-  - name: "Chief-Telecom-GW"
-    ip: "210.65.1.254"        # [更新] 是方電訊閘道器 (.254)
-  - name: "NCHC-TWAREN-GW"
-    ip: "140.110.16.254"      # [更新] 國網中心 TWAREN 閘道器 (.254)
+    ip: "140.112.254.4"       # (台大是學網中少數友善開放的，維持監測)
   - name: "Google-IDC-Taiwan"
-    ip: "142.251.43.3"
+    ip: "142.251.43.3"        # (已移除擋 Ping 的是方與國網中心)
