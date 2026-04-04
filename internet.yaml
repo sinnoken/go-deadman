@@ -11,7 +11,7 @@ devices:
     ip: "62.115.146.197"
   - name: "GTT-Global-Core"
     ip: "213.200.64.94"       
-  - name: "Telstra-Global"    # [新增] 替換 Tata，澳洲與亞太頂級骨幹
+  - name: "Telstra-Global"
     ip: "139.130.4.4"
 
   # --- 三大公有雲 Anycast 入口 ---
@@ -25,8 +25,8 @@ devices:
 
   # --- 世界前 5 大 IX 業者與亞太骨幹 ---
   - name: "---"
-  - name: "PCCW-Global-HK"    # [新增] 替換 DE-CIX，亞洲最大 Tier-1 骨幹
-    ip: "63.218.0.1"
+  - name: "IIJ-Japan"         # [更新] 替換 PCCW，改用日本 IIJ 頂級骨幹
+    ip: "202.232.2.2"
   - name: "AMS-IX-Amsterdam"
     ip: "195.69.144.11"
   - name: "LINX-London-RS"
@@ -69,8 +69,8 @@ devices:
   - name: "Kbro-Cable-Net"
     ip: "203.79.224.30"
   - name: "Homeplus-CNS"
-    ip: "219.85.1.1"          # (中嘉成功通訊，維持此設定)
-  - name: "So-net-Taiwan"     # (已移除擋 Ping 的 TBC)
+    ip: "219.85.1.1"
+  - name: "So-net-Taiwan"
     ip: "61.64.127.2"
   - name: "APTG-Telecom"
     ip: "210.200.211.225"
@@ -79,9 +79,9 @@ devices:
 
   # --- 台灣公共基礎建設與重要節點 ---
   - name: "---"
-  - name: "TWNIC-Quad101"     # [新增] 台灣網路資訊中心 (TWNIC) 官方 DNS，極度穩定
+  - name: "TWNIC-Quad101"
     ip: "101.101.101.101"
   - name: "TANet-NTU-DNS"
-    ip: "140.112.254.4"       # (台大是學網中少數友善開放的，維持監測)
+    ip: "140.112.254.4"
   - name: "Google-IDC-Taiwan"
-    ip: "142.251.43.3"        # (已移除擋 Ping 的是方與國網中心)
+    ip: "142.251.43.3"
