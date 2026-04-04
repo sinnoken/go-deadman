@@ -10,9 +10,9 @@ devices:
   - name: "Telia-Arelion"
     ip: "62.115.146.197"
   - name: "GTT-Global-Core"
-    ip: "213.200.77.254"      # [更新] GTT 骨幹節點 (替代 DNS)
+    ip: "213.200.64.94"       # [更新] 改用 GTT DNS，原網段已阻擋 ICMP
   - name: "Tata-Global-Network"
-    ip: "216.6.87.14"         # [更新] Tata 路由測試伺服器 (Looking Glass)
+    ip: "216.6.86.11"         # [更新] 改用 Tata 官方 DNS，原 LG 節點已阻擋 ICMP
 
   # --- 三大公有雲 Anycast 入口 (Top 3 Public Clouds) ---
   - name: "---"
@@ -26,7 +26,7 @@ devices:
   # --- 世界前 5 大 IX 業者 (Top 5 Global IXPs) ---
   - name: "---"
   - name: "DE-CIX-Frankfurt"
-    ip: "80.81.192.110"       # [更新] DE-CIX 官網與管理網段
+    ip: "80.81.192.146"       # [更新] 改用 DE-CIX 官方 NTP 伺服器 (ntp.de-cix.net)
   - name: "AMS-IX-Amsterdam"
     ip: "195.69.144.11"
   - name: "LINX-London-RS"
@@ -34,7 +34,7 @@ devices:
   - name: "Equinix-Ashburn-RS"
     ip: "199.204.137.1"
   - name: "HKIX-Hong-Kong"
-    ip: "137.189.6.21"        # [更新] HKIX/香港中文大學 (CUHK) 網路主機
+    ip: "137.189.6.21"        
 
   # --- 全球 Anycast DNS & CDN 標竿 (Global Anycast Benchmarks) ---
   - name: "---"
@@ -69,34 +69,34 @@ devices:
   - name: "Kbro-Cable-Net"
     ip: "203.79.224.30"
   - name: "Homeplus-CNS"
-    ip: "219.85.253.253"      # [更新] 中嘉寬頻 (CNS) 官方主 DNS (253 結尾較穩)
+    ip: "219.84.253.253"      # [更新] 改用 CNS 另一組主 DNS (原 253 結尾已擋 ping)
   - name: "TBC-Broadband"
-    ip: "211.73.161.6"
+    ip: "211.73.161.5"        # [更新] 改用 TBC 另一組 DNS (原 6 結尾已擋 ping)
   - name: "So-net-Taiwan"
     ip: "61.64.127.2"
   - name: "APTG-Telecom"
     ip: "210.200.211.225"
   - name: "Vee-Time"
-    ip: "210.59.1.1"          # [更新] 威達雲端官方主 DNS
+    ip: "210.59.1.1"          
 
   # --- 台灣學術網路 (TANet Backbone) ---
   - name: "---"
-  - name: "TANet-MOE-WWW"
-    ip: "140.111.14.180"      # [更新] 教育部全球資訊網 (www.edu.tw)
+  - name: "TANet-MOE-DNS"
+    ip: "140.111.1.2"         # [更新] 教育部主 DNS (原 WWW 伺服器已擋 ping)
   - name: "TANet-NTU-DNS"
     ip: "140.112.254.4"       # (維持綠字)
-  - name: "TANet-NYCU-WWW"
-    ip: "140.113.250.135"     # [更新] 陽明交大官方首頁 (www.nycu.edu.tw)
-  - name: "TANet-NTHU-WWW"
-    ip: "140.114.90.136"      # [更新] 清華大學官方首頁 (www.nthu.edu.tw)
-  - name: "TANet-NCKU-WWW"
-    ip: "140.116.250.3"       # [更新] 成功大學官方首頁 (www.ncku.edu.tw)
+  - name: "TANet-NYCU-DNS"
+    ip: "140.113.1.1"         # [更新] 陽明交大主 DNS (原 WWW 伺服器已擋 ping)
+  - name: "TANet-NTHU-DNS"
+    ip: "140.114.63.1"        # [更新] 清華大學主 DNS (原 WWW 伺服器已擋 ping)
+  - name: "TANet-NCKU-DNS"
+    ip: "140.116.2.6"         # [更新] 成功大學主 DNS (原 WWW 伺服器已擋 ping)
 
   # --- 台灣二類電信與 IDC 業者 (Taiwan Type II / IDC) ---
   - name: "---"
-  - name: "Chief-Telecom-WWW"
-    ip: "210.65.1.135"        # [更新] 是方電訊官方首頁 (www.chief.com.tw)
-  - name: "NCHC-TWAREN-WWW"
-    ip: "140.110.16.100"      # [更新] 國研院國網中心 TWAREN 官網 (www.twaren.net)
+  - name: "Chief-Telecom-DNS"
+    ip: "210.65.1.1"          # [更新] 是方電訊主 DNS (原 WWW 伺服器已擋 ping)
+  - name: "NCHC-TWAREN-DNS"
+    ip: "140.110.16.1"        # [更新] 國網中心 TWAREN 主 DNS (原 WWW 伺服器已擋 ping)
   - name: "Google-IDC-Taiwan"
     ip: "142.251.43.3"
