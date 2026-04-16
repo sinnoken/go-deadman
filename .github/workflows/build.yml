@@ -151,7 +151,7 @@ jobs:
           merge-multiple: true # 將所有子目錄的檔案合併到同一個資料夾
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ./artifacts/* # 發布所有編譯出的檔案
           generate_release_notes: true # 自動生成變更日誌
