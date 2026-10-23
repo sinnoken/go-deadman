@@ -50,11 +50,15 @@ func TestUpdateStatsWindowSlides(t *testing.T) {
 	}
 }
 
-func TestGetLogChar(t *testing.T) {
-	if getLogChar(0, false) != "·" || getLogChar(10, false) != "·" {
-		t.Error("failure should render as ·")
+func TestHistoryRecordsRTT(t *testing.T) {
+	d := &Device{}
+	d.UpdateStats(12.5, true, true)
+	d.UpdateStats(0, false, true)
+	s := d.Snapshot()
+	if h := s.Recent(1); h.Success {
+		t.Errorf("newest should be the loss: %+v", h)
 	}
-	if getLogChar(0.5, true) != "▁" || getLogChar(10000, true) != "█" {
-		t.Error("scale bounds wrong")
+	if h := s.Recent(2); !h.Success || h.RTT != 12.5 {
+		t.Errorf("older entry = %+v", h)
 	}
 }

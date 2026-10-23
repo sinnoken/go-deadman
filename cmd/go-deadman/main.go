@@ -20,7 +20,7 @@ import (
 )
 
 // version 於 CI 建置時以 -ldflags "-X main.version=..." 覆寫為 tag 名稱
-var version = "v1.14.0"
+var version = "v1.15.0"
 
 // presetFromExe 讓改名為 go-deadman-<preset>(.exe) 的執行檔預設使用該 preset，
 // 方便在 Windows 上直接雙擊執行不同清單

@@ -19,6 +19,7 @@ var (
 	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
 	headerStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true)
 	upStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
 	downStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	arrowStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
@@ -253,6 +254,51 @@ func formatLoss(rate float64) string {
 	}
 }
 
+// ---------------------------------------------------------
+// HISTORY sparkline
+// ---------------------------------------------------------
+
+// 柱高沿用對數刻度（底數 2.4：1ms 為 ▁、約 190ms 以上為 ▇）。
+// 延遲柱最高只到 ▇，█ 保留給掉包，即使同為紅色也能以形狀區分。
+var barChars = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇"}
+
+const (
+	lossChar = "█"
+	warnRTT  = 50.0  // 毫秒；以上為黃色
+	badRTT   = 150.0 // 毫秒；以上為紅色
+)
+
+func barLevel(rtt float64) int {
+	lvl := int(math.Log(math.Max(1, rtt)) / math.Log(2.4))
+	return max(min(lvl, len(barChars)-1), 0)
+}
+
+// latencyStyle 以絕對延遲上色：<50ms 綠、<150ms 黃、其餘紅
+func latencyStyle(rtt float64) lipgloss.Style {
+	switch {
+	case rtt < warnRTT:
+		return upStyle
+	case rtt < badRTT:
+		return warnStyle
+	default:
+		return downStyle
+	}
+}
+
+// renderHistory 畫出最近 width 筆探測（最新在左）；顏色代表延遲高低，掉包為整格紅色
+func renderHistory(ds monitor.Snapshot, width int) string {
+	var b strings.Builder
+	for j := 1; j <= min(ds.HistCount, width); j++ {
+		h := ds.Recent(j)
+		if !h.Success {
+			b.WriteString(downStyle.Render(lossChar))
+			continue
+		}
+		b.WriteString(latencyStyle(h.RTT).Render(barChars[barLevel(h.RTT)]))
+	}
+	return b.String()
+}
+
 func fmtMs(v float64, ok bool) string {
 	switch {
 	case !ok:
@@ -352,14 +398,7 @@ func renderRow(l layout, ds monitor.Snapshot) string {
 		if ds.DNSFail {
 			hist.WriteString(downStyle.Render(truncWidth("DNS RESOLVE FAILED, retrying", l.hist)))
 		} else {
-			for j := 1; j <= min(ds.HistCount, l.hist); j++ {
-				h := ds.Recent(j)
-				if h.Success {
-					hist.WriteString(upStyle.Render(h.Char))
-				} else {
-					hist.WriteString(downStyle.Render(h.Char))
-				}
-			}
+			hist.WriteString(renderHistory(ds, l.hist))
 		}
 	}
 

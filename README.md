@@ -111,7 +111,7 @@ The file is validated at startup (interval, jitter range, each device has a name
 | **AVG** | Mean of the last 50 successful RTTs |
 | **JIT** | Mean absolute difference between RTTs of *adjacent successful* probes (last 50 pairs); a lost probe breaks the pair. Same rule in native and fallback mode |
 | **SNT** | Settled probes (replied or timed out). Each sequence number counts once; replies arriving after the timeout are ignored |
-| **HISTORY** | Newest on the left; bar height is log-scaled RTT, `·` = lost |
+| **HISTORY** | Newest on the left. Bar height is log-scaled RTT (`▁` ≈ 1 ms … `▇` ≥ ~190 ms); color is the absolute latency: green < 50 ms, yellow < 150 ms, red ≥ 150 ms. A full red block `█` is a lost probe |
 
 Probe timeout is `max(interval, 1s)` in both modes. On narrow terminals columns drop in this order: HISTORY, SNT, JIT, AVG, ADDRESS, LOSS — HOSTNAME and RTT always stay.
 

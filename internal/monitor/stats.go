@@ -10,8 +10,9 @@ const (
 	WindowSize = 50  // AvgRTT 與 Jitter 的滑動視窗大小
 )
 
+// Heartbeat 是一次已結算的探測；如何畫成 sparkline 由 UI 決定
 type Heartbeat struct {
-	Char    string
+	RTT     float64 // 毫秒；Success 為 false 時無意義
 	Success bool
 }
 
@@ -95,7 +96,7 @@ func (d *Device) UpdateStats(rtt float64, success bool, isNative bool) {
 	}
 	d.LossRate = float64(d.Loss) * 100.0 / float64(d.Snt)
 
-	d.History[d.HistoryIdx] = Heartbeat{Char: getLogChar(rtt, success), Success: success}
+	d.History[d.HistoryIdx] = Heartbeat{RTT: rtt, Success: success}
 	d.HistoryIdx = (d.HistoryIdx + 1) % HistSize
 	if d.HistCount < HistSize {
 		d.HistCount++
@@ -139,22 +140,6 @@ func (d *Device) Snapshot() Snapshot {
 // Recent 回傳倒數第 j 筆歷史（j=1 為最新）
 func (s Snapshot) Recent(j int) Heartbeat {
 	return s.History[(s.HistIdx-j+HistSize)%HistSize]
-}
-
-// getLogChar 以對數刻度把 RTT 對應到 sparkline 字元，底數 2.4 讓約 500ms 落在最高階
-func getLogChar(rtt float64, success bool) string {
-	if !success || rtt <= 0 {
-		return "·"
-	}
-
-	const base = 2.4
-	idx := int(math.Log(math.Max(1, rtt)) / math.Log(base))
-
-	scales := []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
-	if idx >= len(scales) {
-		idx = len(scales) - 1
-	}
-	return scales[idx]
 }
 
 // ---------------------------------------------------------

@@ -38,6 +38,7 @@ go test ./internal/monitor -run '^TestName$' -count=1
 - jitter 只配對相鄰兩次都成功的探測。
 - SNT 是已結算（回覆或逾時）的探測數。
 - 探測逾時為 `max(interval, 1s)`，native 與 fallback 共用。
+- HISTORY：柱高為對數刻度（底數 2.4），最高只到 `▇`；顏色依絕對延遲（<50ms 綠、<150ms 黃、其餘紅）；`█` 專門代表掉包（紅色）。`Heartbeat` 只存 RTT 與成功與否，字元與顏色由 `tui.renderHistory` 決定。
 
 修改指標時要同步更新 README 的「Columns」一節與測試。
 

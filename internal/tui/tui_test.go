@@ -195,3 +195,51 @@ func TestQuitKey(t *testing.T) {
 		t.Fatal("q should return tea.Quit")
 	}
 }
+
+func TestBarLevel(t *testing.T) {
+	top := len(barChars) - 1
+	cases := map[float64]int{
+		0.3:  0,   // 未滿 1ms 視為 1ms
+		1:    0,   // ▁
+		2.4:  1,   // ▂
+		6:    2,   // ▃
+		14:   3,   // ▄
+		34:   4,   // ▅
+		80:   5,   // ▆
+		200:  top, // ▇
+		5000: top, // 再高也只到 ▇，█ 留給掉包
+	}
+	for rtt, want := range cases {
+		if got := barLevel(rtt); got != want {
+			t.Errorf("barLevel(%v) = %d, want %d", rtt, got, want)
+		}
+	}
+}
+
+func TestRenderHistory(t *testing.T) {
+	d := &monitor.Device{}
+	for _, p := range []struct {
+		rtt float64
+		ok  bool
+	}{{2.5, true}, {300, true}, {0, false}, {35, true}} {
+		d.UpdateStats(p.rtt, p.ok, true)
+	}
+	// 最新在左：35、掉包、300、2.5
+	if got, want := renderHistory(d.Snapshot(), 10), "▅█▇▂"; got != want {
+		t.Errorf("renderHistory = %q, want %q", got, want)
+	}
+	if got := renderHistory(d.Snapshot(), 2); got != "▅█" {
+		t.Errorf("width-limited history = %q", got)
+	}
+	if renderHistory((&monitor.Device{}).Snapshot(), 10) != "" {
+		t.Error("empty history should render nothing")
+	}
+}
+
+func TestLatencyStyle(t *testing.T) {
+	if latencyStyle(10).GetForeground() != upStyle.GetForeground() ||
+		latencyStyle(80).GetForeground() != warnStyle.GetForeground() ||
+		latencyStyle(150).GetForeground() != downStyle.GetForeground() {
+		t.Error("latency color thresholds wrong")
+	}
+}
