@@ -45,7 +45,7 @@
             "FileDescription": "go-deadman ICMP latency monitor",
             "FileVersion": "0.0.0.0",
             "InternalName": "go-deadman",
-            "LegalCopyright": "Copyright © 2026 go-deadman contributors. MIT License.",
+            "LegalCopyright": "Copyright © 2026 sinnoken. MIT License.",
             "OriginalFilename": "go-deadman.exe",
             "ProductName": "go-deadman",
             "ProductVersion": "0.0.0.0"

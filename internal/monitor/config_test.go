@@ -1,18 +1,20 @@
-package main
+package monitor
 
 import (
 	"os"
 	"testing"
 	"time"
+
+	"go-deadman/presets"
 )
 
 func TestLoadConfigPresets(t *testing.T) {
-	for _, path := range []string{"presets/internet.yaml", "presets/tasks.yaml"} {
+	for _, path := range []string{"../../presets/internet.yaml", "../../presets/tasks.yaml"} {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		cfg, err := loadConfig(data)
+		cfg, err := LoadConfig(data)
 		if err != nil {
 			t.Errorf("%s: %v", path, err)
 			continue
@@ -24,13 +26,13 @@ func TestLoadConfigPresets(t *testing.T) {
 }
 
 func TestLoadConfigEmbedded(t *testing.T) {
-	if _, err := loadConfig(embeddedYaml); err != nil {
-		t.Fatalf("embedded preset %s: %v", presetName, err)
+	if _, err := LoadConfig(presets.Data); err != nil {
+		t.Fatalf("embedded preset %s: %v", presets.Name, err)
 	}
 }
 
 func TestLoadConfigDefaultsAndSeparator(t *testing.T) {
-	cfg, err := loadConfig([]byte(`
+	cfg, err := LoadConfig([]byte(`
 devices:
   - name: " router "
   - ip: "192.0.2.1"
@@ -65,14 +67,14 @@ func TestLoadConfigErrors(t *testing.T) {
 		"malformed yaml": "devices: [",
 	}
 	for name, in := range cases {
-		if _, err := loadConfig([]byte(in)); err == nil {
+		if _, err := LoadConfig([]byte(in)); err == nil {
 			t.Errorf("%s: expected error", name)
 		}
 	}
 }
 
 func TestLoadConfigIgnoresUnknownKeys(t *testing.T) {
-	if _, err := loadConfig([]byte("scale: 10\ndevices: [{ip: 192.0.2.1}]")); err != nil {
+	if _, err := LoadConfig([]byte("scale: 10\ndevices: [{ip: 192.0.2.1}]")); err != nil {
 		t.Fatal(err)
 	}
 }

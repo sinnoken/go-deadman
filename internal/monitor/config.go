@@ -1,4 +1,5 @@
-package main
+// Package monitor 負責設定載入、ping worker 與每個目標的統計。
+package monitor
 
 import (
 	"errors"
@@ -22,12 +23,12 @@ type Config struct {
 	Jitter   float64   `yaml:"jitter"`
 	Devices  []*Device `yaml:"devices"`
 
-	interval time.Duration // 由 Interval 解析而來，經 loadConfig 驗證
+	interval time.Duration // 由 Interval 解析而來，經 LoadConfig 驗證
 }
 
-// loadConfig 解析 YAML、套用預設值並驗證；通過後每個 Device 都已可交給 worker。
+// LoadConfig 解析 YAML、套用預設值並驗證；通過後每個 Device 都已可交給 worker。
 // 未知的鍵（例如 preset 中的 scale）會被忽略。
-func loadConfig(data []byte) (Config, error) {
+func LoadConfig(data []byte) (Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("YAML 格式錯誤: %w", err)
@@ -74,4 +75,13 @@ func loadConfig(data []byte) (Config, error) {
 		d.Loading = true
 	}
 	return cfg, nil
+}
+
+// Start 為每個非分隔列的目標啟動一個 worker goroutine
+func (c Config) Start() {
+	for _, d := range c.Devices {
+		if !d.isSep {
+			go resolveAndStartWorker(d, c.interval, c.Jitter)
+		}
+	}
 }

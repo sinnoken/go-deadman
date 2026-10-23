@@ -1,15 +1,17 @@
-package main
+package tui
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"go-deadman/internal/monitor"
 )
 
 func testModel(t *testing.T, width int) model {
 	t.Helper()
-	cfg, err := loadConfig([]byte(`
+	cfg, err := monitor.LoadConfig([]byte(`
 devices:
   - name: "a-very-long-hostname-that-will-not-fit-anywhere.example.net"
     ip: "2001:db8:ffff:ffff:ffff:ffff:ffff:ffff"
@@ -29,7 +31,7 @@ devices:
 	d[1].UpdateStats(0, false, false)
 	d[3].IsDNSFail = true
 	d[3].Loading = false
-	return model{cfg: cfg, devices: d, width: width, height: 40, hostname: "test-host"}
+	return model{cfg: cfg, width: width, height: 40, hostname: "test-host", version: "v0.0.0-test"}
 }
 
 func TestViewFitsWidth(t *testing.T) {
@@ -58,7 +60,7 @@ func TestComputeLayoutPriority(t *testing.T) {
 		t.Errorf("narrow layout = %+v", narrow)
 	}
 	wide := computeLayout(200)
-	if !wide.loss || wide.addr == 0 || !wide.avg || !wide.jit || !wide.snt || wide.hist != HIST_SIZE {
+	if !wide.loss || wide.addr == 0 || !wide.avg || !wide.jit || !wide.snt || wide.hist != monitor.HistSize {
 		t.Errorf("wide layout = %+v", wide)
 	}
 	if wide.name > colMax || wide.addr > colMax {
@@ -82,6 +84,29 @@ func TestFitWidthCJK(t *testing.T) {
 	for _, c := range cases {
 		if got := fitWidth(c.in, c.w); got != c.want {
 			t.Errorf("fitWidth(%q, %d) = %q, want %q", c.in, c.w, got, c.want)
+		}
+	}
+}
+
+func TestFormatLoss(t *testing.T) {
+	cases := map[float64]string{
+		0:     "0%",
+		0.001: "<0.1%",
+		0.05:  "<0.1%",
+		0.15:  "0.1%",
+		0.5:   "0.5%",
+		9.99:  "9.9%",
+		10:    "10%",
+		99.6:  "99%",
+		100:   "100%",
+	}
+	for rate, want := range cases {
+		got := formatLoss(rate)
+		if got != want {
+			t.Errorf("formatLoss(%v) = %q, want %q", rate, got, want)
+		}
+		if len(got) > lossW {
+			t.Errorf("formatLoss(%v) = %q exceeds %d chars", rate, got, lossW)
 		}
 	}
 }

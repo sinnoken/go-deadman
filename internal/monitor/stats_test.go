@@ -1,32 +1,9 @@
-package main
+package monitor
 
 import (
 	"math"
 	"testing"
 )
-
-func TestFormatLoss(t *testing.T) {
-	cases := map[float64]string{
-		0:     "0%",
-		0.001: "<0.1%",
-		0.05:  "<0.1%",
-		0.15:  "0.1%",
-		0.5:   "0.5%",
-		9.99:  "9.9%",
-		10:    "10%",
-		99.6:  "99%",
-		100:   "100%",
-	}
-	for rate, want := range cases {
-		got := formatLoss(rate)
-		if got != want {
-			t.Errorf("formatLoss(%v) = %q, want %q", rate, got, want)
-		}
-		if len(got) > lossW {
-			t.Errorf("formatLoss(%v) = %q exceeds %d chars", rate, got, lossW)
-		}
-	}
-}
 
 func TestUpdateStats(t *testing.T) {
 	d := &Device{}
@@ -55,17 +32,17 @@ func TestUpdateStats(t *testing.T) {
 	if d.LastOK || d.LastRTT != 40 || d.IsNative {
 		t.Errorf("after failure LastOK/LastRTT/IsNative = %v/%v/%v", d.LastOK, d.LastRTT, d.IsNative)
 	}
-	if d.HistCount != 6 || d.History[(d.HistoryIdx-1+HIST_SIZE)%HIST_SIZE].Success {
+	if d.HistCount != 6 || d.History[(d.HistoryIdx-1+HistSize)%HistSize].Success {
 		t.Errorf("history not updated: count=%d", d.HistCount)
 	}
 }
 
 func TestUpdateStatsWindowSlides(t *testing.T) {
 	d := &Device{}
-	for i := 0; i < WINDOW_SIZE+10; i++ {
+	for i := 0; i < WindowSize+10; i++ {
 		d.UpdateStats(float64(i%2)*10+5, true, true) // 5,15,5,15...
 	}
-	if len(d.Window) != WINDOW_SIZE || len(d.JitWindow) != WINDOW_SIZE {
+	if len(d.Window) != WindowSize || len(d.JitWindow) != WindowSize {
 		t.Fatalf("window sizes = %d/%d", len(d.Window), len(d.JitWindow))
 	}
 	if math.Abs(d.AvgRTT-10) > 1e-9 || math.Abs(d.Jitter-10) > 1e-9 {

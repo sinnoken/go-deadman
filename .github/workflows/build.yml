@@ -4,10 +4,10 @@ on:
   push:
     branches: [main]
     tags: ['v*']
-    paths-ignore: ['**/*.md', '.gitignore', 'screenshot.jpg']
+    paths-ignore: ['**/*.md', '.gitignore', 'docs/**', 'LICENSE']
   pull_request:
     branches: [main]
-    paths-ignore: ['**/*.md', '.gitignore', 'screenshot.jpg']
+    paths-ignore: ['**/*.md', '.gitignore', 'docs/**', 'LICENSE']
   workflow_dispatch:
 
 permissions:
@@ -65,6 +65,10 @@ jobs:
     needs: test
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write     # build provenance attestation
+      attestations: write
     strategy:
       matrix:
         preset: [internet, tasks]
@@ -97,21 +101,36 @@ jobs:
         if: matrix.goos == 'windows'
         run: |
           GOOS= GOARCH= go install github.com/tc-hib/go-winres@latest
-          go-winres make --arch "${{ matrix.goarch }}" \
+          go-winres make --in winres/winres.json --out cmd/go-deadman/rsrc \
+            --arch "${{ matrix.goarch }}" \
             --product-version "${{ steps.ver.outputs.numeric }}" \
             --file-version "${{ steps.ver.outputs.numeric }}"
 
       - name: Build
+        id: build
         run: |
-          name="deadman-${{ matrix.preset }}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          if [ "${{ matrix.goos }}" = "windows" ]; then name="$name.exe"; fi
+          exe=go-deadman
+          if [ "${{ matrix.goos }}" = "windows" ]; then exe="$exe.exe"; fi
+          pkg="go-deadman-${{ matrix.preset }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p "stage/$pkg" dist
           go build -tags "${{ matrix.preset }}" -trimpath \
             -ldflags "-s -w -X main.version=${{ steps.ver.outputs.version }}" \
-            -o "dist/$name" .
+            -o "stage/$pkg/$exe" ./cmd/go-deadman
+          cp LICENSE README.md "stage/$pkg/"
+          (cd stage && zip -qr "../dist/$pkg.zip" "$pkg")
+          echo "exe=stage/$pkg/$exe" >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            ${{ steps.build.outputs.exe }}
+            dist/*.zip
 
       - uses: actions/upload-artifact@v7
         with:
-          name: deadman-${{ matrix.preset }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: go-deadman-${{ matrix.preset }}-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
 
   release:
@@ -125,7 +144,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: dist
-          pattern: deadman-*
+          pattern: go-deadman-*
           merge-multiple: true
 
       - name: Checksums

@@ -1,49 +1,52 @@
 # 💀 go-deadman
 
-![screenshot](./screenshot.jpg)
+![screenshot](docs/screenshot.png)
 
-> A Terminal UI (TUI) network monitor that tracks **ICMP ping latency, jitter, and packet loss** across multiple targets simultaneously — shipped as a single executable with its target list built in.
+> A terminal dashboard that tracks **ICMP latency, jitter and packet loss** for many targets at once — a single executable with its target list built in.
 
-![Version](https://img.shields.io/badge/version-v1.12.0-blue)
 ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
-![License](https://img.shields.io/badge/license-MIT-green)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Inspired by https://github.com/upa/deadman
+Inspired by [upa/deadman](https://github.com/upa/deadman).
 
 ---
 
 ## ✨ Features
 
-| Feature | Description |
-|---|---|
-| 🎨 **Responsive TUI** | Bubble Tea + Lipgloss; columns adapt to the terminal width (CJK-aware) and never overflow it |
-| ⚡ **Socket-reuse ping engine** | `pro-bing` in infinite-send mode; each probe is tracked by sequence number |
-| 📊 **Metrics** | Loss %, last RTT, moving-average RTT, jitter, settled probe count |
-| 📈 **Sparkline history** | `▁▂▃▄▅▆▇█` scaled logarithmically, `·` for a lost probe |
-| 🔄 **Fallback** | Uses the OS `ping` command when raw ICMP is unavailable |
-| 🌐 **DNS resolution** | Give only a hostname or only an IP; the other is resolved |
-| 🧩 **Embedded presets** | Target list compiled in via `//go:embed`; override at runtime with `-config` |
-| 🪟 **Windows resources** | Icon and version info embedded with `go-winres` |
+- **Responsive TUI** (Bubble Tea + Lipgloss) — columns adapt to the terminal width, CJK-aware, never overflow
+- **Socket-reuse ping engine** (`pro-bing`, infinite-send mode) — every probe tracked by sequence number
+- **Metrics** — loss %, last RTT, moving-average RTT, jitter, settled probe count, sparkline history
+- **Fallback** to the OS `ping` command when raw ICMP is unavailable
+- **DNS resolution** — give only a hostname or only an IP
+- **Embedded presets** with a runtime `-config` override
+- **Redraws only when data changes** (max 20 fps)
 
 ---
 
-## 🚀 Getting Started
+## 📦 Download
 
-Requires Go 1.25+.
+Grab a zip from [Releases](https://github.com/sinnoken/go-deadman/releases):
+
+| Asset | Embedded targets |
+|---|---|
+| `go-deadman-internet-windows-amd64.zip` | Global ISPs, cloud anycast, IXPs, DNS, Taiwan ISPs |
+| `go-deadman-tasks-windows-amd64.zip` | LAN targets |
+
+Each release ships `SHA256SUMS.txt`, and every binary has a GitHub build-provenance attestation, so you can prove it was built by this repository's CI from a specific commit:
 
 ```bash
-git clone https://github.com/sinnoken/go-deadman.git
-cd go-deadman
-
-go build -trimpath -ldflags="-s -w" -o go-deadman .              # embeds presets/internet.yaml
-go build -trimpath -ldflags="-s -w" -tags tasks -o go-deadman .  # embeds presets/tasks.yaml
+gh attestation verify go-deadman.exe --repo sinnoken/go-deadman
 ```
 
+---
+
+## 🚀 Usage
+
 ```bash
-./go-deadman                      # use the embedded preset
-./go-deadman -config my.yaml      # use an external config instead
-./go-deadman -version
+go-deadman                     # use the embedded preset
+go-deadman -config my.yaml     # use an external config instead
+go-deadman -version
 ```
 
 Press **`q`** or **`Ctrl+C`** to exit.
@@ -52,11 +55,11 @@ Press **`q`** or **`Ctrl+C`** to exit.
 
 | OS | Native mode needs |
 |---|---|
-| **Linux** | Unprivileged ICMP (`net.ipv4.ping_group_range`) — enabled on most distros |
-| **macOS** | Nothing extra |
 | **Windows** | Run as **Administrator** |
+| **Linux** | Unprivileged ICMP (`net.ipv4.ping_group_range`), enabled on most distros |
+| **macOS** | Nothing extra |
 
-Without it, the target **automatically falls back** to the OS `ping` command. Native targets are marked with `*` next to SNT.
+Without it, each target **falls back** to the OS `ping` command automatically. Native targets are marked with `*` after SNT.
 
 ---
 
@@ -75,75 +78,63 @@ devices:
   - ip: "192.168.1.1"    # IP only → name via reverse DNS
 ```
 
-The config is validated at startup (interval, jitter range, every device has a name or a valid IP); an invalid file exits with an error message. Unknown keys are ignored.
+The file is validated at startup (interval, jitter range, each device has a name or a valid IP). Invalid files exit with a message; unknown keys are ignored.
 
 ---
 
-## 📊 Dashboard
-
-```
-  HOSTNAME             ADDRESS               LOSS  RTT(ms)  AVG(ms)  JIT(ms)   SNT   HISTORY
-  ────────────────────────────────────────────────────────────────────────────────────────────
-  Cloudflare           1.1.1.1                 0%    2.341    2.298    0.103   142*  ▃▃▃▃▄▃▄▃
-  HiNet-DNS            168.95.1.1            0.7%     FAIL    4.011    0.214   142*  ▃▃▃▄▃▃▃·
-```
+## 📊 Columns
 
 | Column | Meaning |
 |---|---|
 | **LOSS** | Lost ÷ SNT. Non-zero loss is never shown as `0%` (`<0.1%`, one decimal below 10%), and is never rounded up to `100%` |
-| **RTT** | Most recent successful RTT; shows **`FAIL`** (row in red) when the latest probe failed |
+| **RTT** | Most recent successful RTT; **`FAIL`** (row in red) when the latest probe failed |
 | **AVG** | Mean of the last 50 successful RTTs |
-| **JIT** | Mean absolute difference between RTTs of *adjacent successful* probes (last 50 pairs); pairs never span a lost probe. Same rule for native and fallback |
-| **SNT** | Settled probes (replied or timed out). In-flight probes are not counted; each sequence number is counted once, and late replies after a timeout are ignored |
-| **HISTORY** | Most recent probe on the left |
+| **JIT** | Mean absolute difference between RTTs of *adjacent successful* probes (last 50 pairs); a lost probe breaks the pair. Same rule in native and fallback mode |
+| **SNT** | Settled probes (replied or timed out). Each sequence number counts once; replies arriving after the timeout are ignored |
+| **HISTORY** | Newest on the left; bar height is log-scaled RTT, `·` = lost |
 
-On narrow terminals columns are dropped in this order: HISTORY, SNT, JIT, AVG, ADDRESS, LOSS. HOSTNAME and RTT are always shown.
-
-The probe timeout is `max(interval, 1s)` for both native and fallback modes. The screen is only redrawn when data changes, at most 20 times per second.
+Probe timeout is `max(interval, 1s)` in both modes. On narrow terminals columns drop in this order: HISTORY, SNT, JIT, AVG, ADDRESS, LOSS — HOSTNAME and RTT always stay.
 
 ---
 
-## 🗂️ Layout
+## 🛠️ Building
 
-| File | Contents |
-|---|---|
-| `main.go` | Flags, config source selection, program start |
-| `config.go` | `Config`, `loadConfig` (parse, defaults, validation) |
-| `stats.go` | `Device`, `UpdateStats`, loss formatting, sparkline |
-| `ping.go` | DNS resolution, native worker + `probeTracker`, fallback worker, `parseRTT` |
-| `ui.go` | Bubble Tea model, on-demand redraw, width-aware layout |
-| `preset_*.go` | Build-tag selection of the embedded preset |
-| `presets/` | `internet.yaml` (global / Taiwan backbone), `tasks.yaml` (LAN) |
-| `winres/` | Windows icon and version-info manifest |
-
----
-
-## 🧪 Development
+Requires Go 1.25+.
 
 ```bash
-gofmt -l .
-go vet ./... && go vet -tags tasks ./...
-go test ./...                     # add -race where cgo is available
-go test -tags tasks ./...
-go test -run '^TestProbeTracker$' -count=1 .
+go build -trimpath -ldflags="-s -w" -o go-deadman ./cmd/go-deadman              # internet preset
+go build -trimpath -ldflags="-s -w" -tags tasks -o go-deadman ./cmd/go-deadman  # tasks preset
 ```
 
----
+Windows icon and version info (optional):
 
-## 🤖 CI/CD
+```bash
+go install github.com/tc-hib/go-winres@latest
+go-winres make --in winres/winres.json --out cmd/go-deadman/rsrc --product-version 1.2.3 --file-version 1.2.3
+```
 
-`.github/workflows/build.yml`:
+### Project layout
 
-| Trigger | Jobs |
+| Path | Contents |
 |---|---|
-| Push / PR to `main` | `test`: tidy check, gofmt, vet, `go test -race` (both presets), golangci-lint, govulncheck, gosec |
-| Tag `v*` | `test` → `build` → `release` (binaries + `SHA256SUMS.txt`) |
-| Manual dispatch | `test` → `build` |
+| `cmd/go-deadman/` | Entry point: flags, config source, program start |
+| `internal/monitor/` | Config loading/validation, ping workers (`probeTracker`, fallback), per-target statistics |
+| `internal/tui/` | Bubble Tea model, width-aware layout, rendering |
+| `presets/` | Target lists and their build-tag-selected embedding |
+| `winres/` | Windows icon and version-info manifest |
 
-`build` produces `deadman-{internet,tasks}-windows-amd64.exe`. The tag is injected as the app version (`-X main.version`) and as the Windows file/product version (`go-winres`). Dependabot keeps Go modules and Actions up to date.
+### Tests and checks
+
+```bash
+go vet ./... && go vet -tags tasks ./...
+go test ./... && go test -tags tasks ./...    # add -race where cgo is available
+go test ./internal/monitor -run '^TestProbeTracker$' -count=1
+```
+
+CI (`.github/workflows/build.yml`) runs a tidy check, gofmt, vet, race tests, golangci-lint, govulncheck and gosec on every push and PR. Pushing a `v*` tag builds both presets, attests them and publishes a release; the tag becomes the app version and the Windows file version.
 
 ---
 
 ## 📄 License
 
-MIT License. Copyright © 2026 go-deadman contributors.
+[MIT](LICENSE)

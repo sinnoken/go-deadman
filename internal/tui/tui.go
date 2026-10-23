@@ -1,15 +1,19 @@
-package main
+// Package tui 以 Bubble Tea 繪製監控儀表板。
+package tui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"go-deadman/internal/monitor"
 )
 
-const RENDER_FPS = 20 // 重繪頻率上限
+const renderFPS = 20 // 重繪頻率上限
 
 var (
 	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
@@ -21,44 +25,35 @@ var (
 	failRowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
 )
 
-// ---------------------------------------------------------
-// 按需重繪：資料有變才通知 UI，並以 RENDER_FPS 為上限
-// ---------------------------------------------------------
-
-var updateCh = make(chan struct{}, 1)
-
-// signalUpdate 不會阻塞；多次更新會合併成一次重繪
-func signalUpdate() {
-	select {
-	case updateCh <- struct{}{}:
-	default:
-	}
+type model struct {
+	cfg      monitor.Config
+	width    int
+	height   int
+	hostname string
+	version  string
 }
+
+// New 建立儀表板 model；Init 時才啟動 ping worker
+func New(cfg monitor.Config, hostname, version string) tea.Model {
+	return model{cfg: cfg, hostname: hostname, version: version}
+}
+
+// ---------------------------------------------------------
+// 按需重繪：資料有變才重繪，並以 renderFPS 為上限
+// ---------------------------------------------------------
 
 type dataMsg struct{}
 type frameMsg struct{}
 
 func waitForUpdate() tea.Cmd {
 	return func() tea.Msg {
-		<-updateCh
+		<-monitor.Updates()
 		return dataMsg{}
 	}
 }
 
-type model struct {
-	cfg      Config
-	devices  []*Device
-	width    int
-	height   int
-	hostname string
-}
-
 func (m model) Init() tea.Cmd {
-	for _, d := range m.devices {
-		if !d.isSep {
-			go resolveAndStartWorker(d, m.cfg.interval, m.cfg.Jitter)
-		}
-	}
+	m.cfg.Start()
 	return waitForUpdate()
 }
 
@@ -72,7 +67,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case dataMsg:
 		// 本次已重繪；等一個 frame 再接收下一批更新
-		return m, tea.Tick(time.Second/RENDER_FPS, func(time.Time) tea.Msg { return frameMsg{} })
+		return m, tea.Tick(time.Second/renderFPS, func(time.Time) tea.Msg { return frameMsg{} })
 	case frameMsg:
 		return m, waitForUpdate()
 	}
@@ -139,7 +134,7 @@ func computeLayout(width int) layout {
 	grow(&l.name, colMid)
 	grow(&l.addr, colMid)
 	if free >= histGapW+histMin {
-		l.hist = min(free-histGapW, HIST_SIZE)
+		l.hist = min(free-histGapW, monitor.HistSize)
 		free -= histGapW + l.hist
 	}
 	grow(&l.name, colMax)
@@ -210,38 +205,20 @@ func padLeft(s string, w int) string {
 	return strings.Repeat(" ", max(w-lipgloss.Width(s), 0)) + s
 }
 
-// ---------------------------------------------------------
-// 畫面渲染
-// ---------------------------------------------------------
-
-type deviceSnapshot struct {
-	name, ip                         string
-	loading, native, dnsFail, lastOK bool
-	hasRTT                           bool
-	lossRate, lastRTT, avgRTT, jit   float64
-	snt, histCount, histIdx          int
-	history                          [HIST_SIZE]Heartbeat
-}
-
-func (d *Device) snapshot() deviceSnapshot {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	return deviceSnapshot{
-		name:      d.Name,
-		ip:        d.IP,
-		loading:   d.Loading,
-		native:    d.IsNative,
-		dnsFail:   d.IsDNSFail,
-		lastOK:    d.LastOK,
-		hasRTT:    len(d.Window) > 0,
-		lossRate:  d.LossRate,
-		lastRTT:   d.LastRTT,
-		avgRTT:    d.AvgRTT,
-		jit:       d.Jitter,
-		snt:       d.Snt,
-		histCount: d.HistCount,
-		histIdx:   d.HistoryIdx,
-		history:   d.History,
+// formatLoss 回傳最多 5 字元的丟包率字串；非零丟包永遠不會顯示成 0%，
+// 未滿 100% 也不會被進位成 100%。
+func formatLoss(rate float64) string {
+	switch {
+	case rate <= 0:
+		return "0%"
+	case rate < 0.1:
+		return "<0.1%"
+	case rate < 10:
+		return fmt.Sprintf("%.1f%%", math.Floor(rate*10)/10)
+	case rate < 100:
+		return fmt.Sprintf("%.0f%%", math.Floor(rate))
+	default:
+		return "100%"
 	}
 }
 
@@ -256,6 +233,10 @@ func fmtMs(v float64, ok bool) string {
 	}
 }
 
+// ---------------------------------------------------------
+// 畫面渲染
+// ---------------------------------------------------------
+
 func (m model) View() string {
 	if m.height == 0 || m.width == 0 {
 		return " Loading..."
@@ -264,7 +245,7 @@ func (m model) View() string {
 	var s strings.Builder
 
 	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, titleStyle.Render("go-deadman")) + "\n")
-	subTitle := fmt.Sprintf("From: %s | Version: %s | loss+rtt+avg+jitter+history", m.hostname, version)
+	subTitle := fmt.Sprintf("From: %s | Version: %s | loss+rtt+avg+jitter+history", m.hostname, m.version)
 	s.WriteString(lipgloss.PlaceHorizontal(m.width, lipgloss.Center, dimStyle.Render(truncWidth(subTitle, m.width))) + "\n\n")
 
 	header := strings.Repeat(" ", indW) + l.render(rowCells{
@@ -277,27 +258,27 @@ func (m model) View() string {
 	s.WriteString(headerStyle.Render(truncWidth(header, m.width)) + "\n")
 	s.WriteString(dimStyle.Render(strings.Repeat("─", m.width)) + "\n")
 
-	for _, d := range m.devices {
-		if d.isSep {
+	for _, d := range m.cfg.Devices {
+		if d.IsSeparator() {
 			s.WriteString(dimStyle.Render(strings.Repeat(" ", indW)+strings.Repeat("-", max(m.width-indW, 0))) + "\n")
 			continue
 		}
-		s.WriteString(m.renderRow(l, d.snapshot()) + "\n")
+		s.WriteString(renderRow(l, d.Snapshot()) + "\n")
 	}
 
-	footer := fmt.Sprintf(" Interval: %s | App Jitter: %.f%% | *: Native | Window: %d | RTT FAIL: 最近一次探測失敗",
-		m.cfg.Interval, m.cfg.Jitter*100, WINDOW_SIZE)
+	footer := fmt.Sprintf(" Interval: %s | App Jitter: %.f%% | *: Native | Window: %d | FAIL: latest probe failed",
+		m.cfg.Interval, m.cfg.Jitter*100, monitor.WindowSize)
 	s.WriteString("\n" + dimStyle.Render(truncWidth(footer, m.width)))
 	return s.String()
 }
 
-func (m model) renderRow(l layout, ds deviceSnapshot) string {
+func renderRow(l layout, ds monitor.Snapshot) string {
 	indicator := strings.Repeat(" ", indW)
-	if ds.loading {
+	if ds.Loading {
 		indicator = arrowStyle.Render("> ")
 	}
 
-	name, ip := ds.name, ds.ip
+	name, ip := ds.Name, ds.IP
 	if name == "" {
 		name = "resolving..."
 	}
@@ -305,37 +286,37 @@ func (m model) renderRow(l layout, ds deviceSnapshot) string {
 		ip = "resolving..."
 	}
 
-	rtt := fmtMs(ds.lastRTT, ds.hasRTT)
-	if ds.snt > 0 && !ds.lastOK {
+	rtt := fmtMs(ds.LastRTT, ds.HasRTT)
+	if ds.Snt > 0 && !ds.LastOK {
 		rtt = "FAIL"
 	}
 	tag := " "
-	if ds.native {
+	if ds.Native {
 		tag = "*"
 	}
 	snt := "-" + tag
-	if ds.snt > 0 {
-		snt = fmt.Sprintf("%d%s", ds.snt, tag)
+	if ds.Snt > 0 {
+		snt = fmt.Sprintf("%d%s", ds.Snt, tag)
 	}
 
 	line := l.render(rowCells{
 		name: name,
 		addr: ip,
-		loss: formatLoss(ds.lossRate),
+		loss: formatLoss(ds.LossRate),
 		rtt:  rtt,
-		avg:  fmtMs(ds.avgRTT, ds.hasRTT),
-		jit:  fmtMs(ds.jit, ds.hasRTT),
+		avg:  fmtMs(ds.AvgRTT, ds.HasRTT),
+		jit:  fmtMs(ds.Jit, ds.HasRTT),
 		snt:  snt,
 	})
 
 	var hist strings.Builder
 	if l.hist > 0 {
 		hist.WriteString(strings.Repeat(" ", histGapW))
-		if ds.dnsFail {
+		if ds.DNSFail {
 			hist.WriteString(downStyle.Render(truncWidth("DNS RESOLVE FAILED", l.hist)))
 		} else {
-			for j := 1; j <= min(ds.histCount, l.hist); j++ {
-				h := ds.history[(ds.histIdx-j+HIST_SIZE)%HIST_SIZE]
+			for j := 1; j <= min(ds.HistCount, l.hist); j++ {
+				h := ds.Recent(j)
 				if h.Success {
 					hist.WriteString(upStyle.Render(h.Char))
 				} else {
@@ -345,7 +326,7 @@ func (m model) renderRow(l layout, ds deviceSnapshot) string {
 		}
 	}
 
-	if ds.dnsFail || (ds.snt > 0 && !ds.lastOK) {
+	if ds.DNSFail || (ds.Snt > 0 && !ds.LastOK) {
 		line = failRowStyle.Render(line)
 	}
 	return indicator + line + hist.String()
