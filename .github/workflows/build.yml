@@ -57,7 +57,8 @@ jobs:
 
       - name: gosec
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          # v2.29.0 讀不了 Go 1.27 的 export data（version 5）；正式版支援後改回 @latest
+          go install github.com/securego/gosec/v2/cmd/gosec@master
           gosec ./...
 
   build:
