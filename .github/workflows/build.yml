@@ -1,161 +1,137 @@
-name: Build and Release
+name: CI
 
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.yaml'
-      - '**/*.yml'
-      - '.gitignore'
+    branches: [main]
+    tags: ['v*']
+    paths-ignore: ['**/*.md', '.gitignore', 'screenshot.jpg']
   pull_request:
-    branches: [ main ]
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.yaml'
-      - '**/*.yml'
-      - '.gitignore'
-  workflow_dispatch: # <--- 加入這一行，開啟手動觸發開關
-    
+    branches: [main]
+    paths-ignore: ['**/*.md', '.gitignore', 'screenshot.jpg']
+  workflow_dispatch:
+
 permissions:
-  contents: write # 必備：允許 Actions 建立 Release
+  contents: read
 
 jobs:
-  lint:
-    name: Lint and Security Scan
+  test:
+    name: Test, lint and security scan
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v6
-  
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: 'stable'
-          cache: false
+      - uses: actions/checkout@v6
 
-      - name: Initialize & Install Dependencies
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: go.mod / go.sum are tidy
+        run: go mod tidy -diff
+
+      - name: gofmt
         run: |
-          if [ ! -f go.mod ]; then
-            go mod init go-deadman
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed:"; echo "$unformatted"; exit 1
           fi
-          go mod tidy
-          go mod download
-        
-      - name: Prepare Configuration
+
+      - name: go vet
         run: |
-          cp internet.yaml config.yaml
-          
+          go vet ./...
+          go vet -tags tasks ./...
+
+      - name: go test (race)
+        run: |
+          go test -race -count=1 ./...
+          go test -race -count=1 -tags tasks ./...
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: latest
           args: --timeout=5m
 
-      - name: Run govulncheck
+      - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
-      
-      - name: Run Gosec
-        uses: securego/gosec@master
-        env:
-          GOTOOLCHAIN: auto
-        with:
-          args: ./... # 掃描全專案
-                
+
+      - name: gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec ./...
+
   build:
-    name: Build Binary
-    needs: lint
-    runs-on: ubuntu-latest
+    name: Build ${{ matrix.preset }} ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: test
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        # 第一維度：版本
-        config: [tasks,internet ] 
-        # 第二維度：作業系統
-        # goos: [linux, windows, darwin]
+        preset: [internet, tasks]
         goos: [windows]
-        # 第三維度：架構 goarch: [amd64, arm64]
         goarch: [amd64]
-        # 排除不想要的組合 (例如 windows 不需要 arm64)
-        exclude:
-          - goos: windows
-            goarch: arm64
-          - goos: linux
-            goarch: amd64
-          - goos: darwin
-            goarch: amd64
-
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      CGO_ENABLED: '0'
     steps:
-    
-      - name: Checkout Code
-        uses: actions/checkout@v6
-  
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
         with:
-          go-version: 'stable'
-          cache: false
+          go-version: stable
 
-      - name: Initialize & Install Dependencies
+      - name: Resolve version
+        id: ver
         run: |
-          if [ ! -f go.mod ]; then
-            go mod init go-deadman
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${GITHUB_REF_NAME}"
+          else
+            version="v0.0.0-dev+${GITHUB_SHA::7}"
           fi
-          go mod tidy
-          go mod download
+          numeric="${version#v}"; numeric="${numeric%%[-+]*}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "numeric=$numeric" >> "$GITHUB_OUTPUT"
 
-      - name: Install and Run go-winres (Windows only)
+      - name: Windows resources (go-winres)
         if: matrix.goos == 'windows'
         run: |
-          VERSION=${{ github.ref_name }}
-          go install github.com/tc-hib/go-winres@latest
-          go-winres make 
-          
-      - name: Prepare Configuration
-        run: |
-          cp ${{ matrix.config }}.yaml config.yaml
-                   
-      - name: Build Binary
-        run: |
-          # 加上 matrix.config 區分檔名
-          BINARY_NAME=deadman-${{ matrix.config }}-${{ matrix.goos }}-${{ matrix.goarch }}
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            BINARY_NAME=${BINARY_NAME}.exe
-          fi
-          
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-          go build -ldflags="-s -w" -trimpath -o "$BINARY_NAME" .
+          GOOS= GOARCH= go install github.com/tc-hib/go-winres@latest
+          go-winres make --arch "${{ matrix.goarch }}" \
+            --product-version "${{ steps.ver.outputs.numeric }}" \
+            --file-version "${{ steps.ver.outputs.numeric }}"
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v7
+      - name: Build
+        run: |
+          name="deadman-${{ matrix.preset }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then name="$name.exe"; fi
+          go build -tags "${{ matrix.preset }}" -trimpath \
+            -ldflags "-s -w -X main.version=${{ steps.ver.outputs.version }}" \
+            -o "dist/$name" .
+
+      - uses: actions/upload-artifact@v7
         with:
-          # 這裡必須唯一，加入 matrix.config
-          name: deadman-${{ matrix.config }}-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: deadman-${{ matrix.config }}-${{ matrix.goos }}-${{ matrix.goarch }}*
+          name: deadman-${{ matrix.preset }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
 
-  # --- 新增的 Release Job ---
   release:
-    name: Create GitHub Release
+    name: GitHub Release
     needs: build
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') # 只有在推送 Tag 時才執行發布
+    permissions:
+      contents: write
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8
         with:
-          path: ./artifacts
+          path: dist
           pattern: deadman-*
-          merge-multiple: true # 將所有子目錄的檔案合併到同一個資料夾
+          merge-multiple: true
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
         with:
-          files: ./artifacts/* # 發布所有編譯出的檔案
-          generate_release_notes: true # 自動生成變更日誌
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: dist/*
+          generate_release_notes: true

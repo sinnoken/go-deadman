@@ -38,4 +38,10 @@
 - 維持本機建置/測試說明與 `config.yaml` embed 要求一致，避免將產生的設定或模組
   檔案誤當成臨時建置產物。
 
-> 此文件記錄待處理計畫；目前不包含上述程式碼或 CI 修改。
+## 實作狀態（v1.12.0）
+
+以上七項皆已實作，並一併處理 `go-deadman-code-review.md` 方案 A 的 D1–D3、I1、I2、I4、I5、S1–S4：
+
+- 檔案依職責拆成 `config.go`、`stats.go`、`ping.go`、`ui.go`；preset 移到 `presets/`，改以 build tag 選擇並內嵌，另可用 `-config` 在執行期覆寫。
+- `go.mod`／`go.sum` 已提交；CI 改寫為 test（tidy、gofmt、vet、race、lint、安全掃描）→ build → release，YAML 變更也會觸發。
+- 未處理：review 的 I3（fallback 每次呼叫系統 `ping` 的擴充性），屬架構限制。

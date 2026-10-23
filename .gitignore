@@ -1,0 +1,8 @@
+# 建置產物
+/dist/
+/go-deadman
+*.exe
+*.syso
+
+# 舊流程留下的 config.yaml（現已改用 presets/ + build tag）
+/config.yaml

@@ -12,19 +12,19 @@
       "0409": {
         "identity": {
           "name": "",
-          "version": "1.0.0.0"
+          "version": ""
         },
-        "description": "go-deadman",
+        "description": "go-deadman ICMP latency monitor",
         "minimum-os": "win7",
         "execution-level": "as invoker",
         "ui-access": false,
         "auto-elevate": false,
-        "dpi-awareness": "system",
+        "dpi-awareness": "unaware",
         "disable-theming": false,
         "disable-window-filtering": false,
         "high-resolution-scrolling-aware": false,
         "ultra-high-resolution-scrolling-aware": false,
-        "long-path-aware": false,
+        "long-path-aware": true,
         "printer-driver-isolation": false,
         "gdi-scaling": false,
         "segment-heap": false,
@@ -36,23 +36,19 @@
     "#1": {
       "0000": {
         "fixed": {
-          "file_version": "{version}",
-          "product_version": "{version}"
+          "file_version": "0.0.0.0",
+          "product_version": "0.0.0.0"
         },
         "info": {
           "0409": {
-            "Comments": "go-deadman",
-            "CompanyName": "go-deadman",
-            "FileDescription": "go-deadman ping Monitor",
-            "FileVersion": "{version}",
+            "Comments": "https://github.com/sinnoken/go-deadman",
+            "FileDescription": "go-deadman ICMP latency monitor",
+            "FileVersion": "0.0.0.0",
             "InternalName": "go-deadman",
-            "LegalCopyright": "Copyright © 2026 go-deadman. Licensed under the MIT License.",
-            "LegalTrademarks": "go-deadman",
+            "LegalCopyright": "Copyright © 2026 go-deadman contributors. MIT License.",
             "OriginalFilename": "go-deadman.exe",
-            "PrivateBuild": "go-deadman",
             "ProductName": "go-deadman",
-            "ProductVersion": "{version}",
-            "SpecialBuild": "go-deadman"
+            "ProductVersion": "0.0.0.0"
           }
         }
       }

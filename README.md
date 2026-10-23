@@ -2,27 +2,14 @@
 
 ![screenshot](./screenshot.jpg)
 
-> A high-performance, event-driven Terminal UI (TUI) network monitor that tracks **ICMP ping latency, jitter, and packet loss** across multiple targets simultaneously — all from a single, zero-dependency executable.
+> A Terminal UI (TUI) network monitor that tracks **ICMP ping latency, jitter, and packet loss** across multiple targets simultaneously — shipped as a single executable with its target list built in.
 
-![Version](https://img.shields.io/badge/version-v1.11.0-blue)
-![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)
+![Version](https://img.shields.io/badge/version-v1.12.0-blue)
+![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
----
-
-## 📖 Project Overview
-
-`go-deadman` is a real-time network health monitor built for network engineers and system administrators. It continuously pings a configurable list of devices — from global Tier-1 ISPs and cloud Anycast endpoints to local LAN hosts — and renders a live, color-coded dashboard directly in your terminal.
-
-Key design goals:
-
-- **Zero external dependencies at runtime** — the config YAML is compiled directly into the binary via Go's `//go:embed`
-- **Event-driven, socket-reuse architecture** — avoids the overhead of spawning a new process or socket per ping cycle
-- **Graceful degradation** — automatically falls back to the OS native `ping` command when raw socket privileges are unavailable
-- **Single-file simplicity** — the entire application logic lives in `main.go`
-
-> Inspired by https://github.com/upa/deadman
+Inspired by https://github.com/upa/deadman
 
 ---
 
@@ -30,318 +17,133 @@ Key design goals:
 
 | Feature | Description |
 |---|---|
-| 🎨 **Rich TUI Dashboard** | Built with Bubble Tea + Lipgloss; fully responsive to terminal window resize |
-| ⚡ **Event-Driven Ping Engine** | Uses `pro-bing` in infinite-send mode with socket reuse — no per-ping overhead |
-| 📊 **Real-Time Metrics** | Tracks RTT, moving-average RTT, jitter, packet loss %, and total sent count |
-| 📈 **Sparkline History** | Visual ping history using Unicode block chars (`▁▂▃▄▅▆▇█`) scaled logarithmically |
-| 🔄 **Smart Fallback** | Falls back to OS `ping` command parsing when raw socket privileges are missing |
-| 🌐 **Auto DNS Resolution** | Resolves hostname → IP or IP → hostname automatically if only one is provided |
-| 🧩 **Embed Config** | Config YAML is embedded at compile time; ships as a single portable binary |
-| 🪟 **Windows Native** | Supports Windows `.exe` with custom app icon via `go-winres` |
-| 🔒 **Security Scanned** | CI pipeline runs `golangci-lint`, `govulncheck`, and `gosec` on every push |
-
----
-
-## 🏗️ Tech Stack
-
-| Category | Library / Tool | Role |
-|---|---|---|
-| **Language** | https://go.dev/ (stable, 1.21+) | Core runtime |
-| **TUI Framework** | https://github.com/charmbracelet/bubbletea | Elm-architecture UI event loop |
-| **Terminal Styling** | [Lipgloss](https://github.com/charmbracelet/lipgloss) | Color, layout, and text styling |
-| **ICMP Ping Engine** | [pro-bing](https://github.com/prometheus-community/pro-bing) | Native Go ICMP socket management |
-| **Config Format** | YAML (`config.yaml`) | Device list and runtime parameters |
-| **Static Embedding** | Go `//go:embed` | Bundle config YAML into the binary |
-| **Windows Resources** | https://github.com/tc-hib/go-winres | Embed app icon and version info into `.exe` |
-| **CI/CD** | GitHub Actions | Lint, security scan, multi-config build, and release |
-| **Dependency Updates** | Dependabot | Weekly automated Go module and Actions updates |
-| **Linting** | golangci-lint | Static analysis |
-| **Vulnerability Scan** | govulncheck + gosec | Security audit |
-
----
-
-## 📁 Project Structure
-
-```
-go-deadman/
-├── main.go              # Entire application: config, ping engine, TUI, entry point
-├── internet.yaml        # Preset: Global ISPs, CDNs, IXPs, and Taiwan ISPs
-├── tasks.yaml           # Preset: Local LAN targets (192.168.x.x)
-├── config.yaml          # ⚠️ Required at build time — copy from internet.yaml or tasks.yaml
-├── screenshot.jpg       # Dashboard screenshot for README
-├── winres/
-│   ├── icon.png         # App icon (256×256)
-│   ├── icon16.png       # App icon (16×16)
-│   └── winres.json      # Windows resource manifest (version, icon, UAC level)
-└── .github/
-    ├── workflows/
-    │   └── build.yml    # CI: lint → build → release pipeline
-    └── dependabot.yml   # Automated dependency update config
-```
+| 🎨 **Responsive TUI** | Bubble Tea + Lipgloss; columns adapt to the terminal width (CJK-aware) and never overflow it |
+| ⚡ **Socket-reuse ping engine** | `pro-bing` in infinite-send mode; each probe is tracked by sequence number |
+| 📊 **Metrics** | Loss %, last RTT, moving-average RTT, jitter, settled probe count |
+| 📈 **Sparkline history** | `▁▂▃▄▅▆▇█` scaled logarithmically, `·` for a lost probe |
+| 🔄 **Fallback** | Uses the OS `ping` command when raw ICMP is unavailable |
+| 🌐 **DNS resolution** | Give only a hostname or only an IP; the other is resolved |
+| 🧩 **Embedded presets** | Target list compiled in via `//go:embed`; override at runtime with `-config` |
+| 🪟 **Windows resources** | Icon and version info embedded with `go-winres` |
 
 ---
 
 ## 🚀 Getting Started
 
-### Prerequisites
-
-- **Go 1.21+** — [Download](https://go.dev/dl/)
-- **`config.yaml`** must exist in the project root before building (see below)
-
----
-
-### Step 1 — Clone the Repository
+Requires Go 1.25+.
 
 ```bash
-git clone https://github.com/<your-org>/go-deadman.git
+git clone https://github.com/sinnoken/go-deadman.git
 cd go-deadman
+
+go build -trimpath -ldflags="-s -w" -o go-deadman .              # embeds presets/internet.yaml
+go build -trimpath -ldflags="-s -w" -tags tasks -o go-deadman .  # embeds presets/tasks.yaml
 ```
 
----
-
-### Step 2 — Prepare the Configuration
-
-The binary embeds `config.yaml` at compile time using `//go:embed`. Choose one of the two presets and copy it:
-
 ```bash
-# Option A: Monitor global internet infrastructure (ISPs, CDNs, IXPs)
-cp internet.yaml config.yaml
-
-# Option B: Monitor a local LAN subnet (192.168.77.x)
-cp tasks.yaml config.yaml
-```
-
-> ⚠️ **Build will fail** if `config.yaml` does not exist — it is a required embed source.
-
----
-
-### Step 3 — Install Dependencies
-
-```bash
-go mod tidy
-go mod download
-```
-
----
-
-### Step 4 — Build
-
-```bash
-# Standard build
-go build -ldflags="-s -w" -trimpath -o go-deadman .
-
-# Windows (cross-compile from Linux/macOS)
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -trimpath -o go-deadman.exe .
-```
-
----
-
-### Step 5 — Run
-
-```bash
-# Linux / macOS
-./go-deadman
-
-# Windows
-.\go-deadman.exe
+./go-deadman                      # use the embedded preset
+./go-deadman -config my.yaml      # use an external config instead
+./go-deadman -version
 ```
 
 Press **`q`** or **`Ctrl+C`** to exit.
 
----
+### Native ICMP vs fallback
 
-### Raw Socket Privileges (for Native Ping Mode)
-
-`go-deadman` uses native Go ICMP sockets by default for maximum performance. This requires elevated privileges:
-
-| OS | How to Grant |
+| OS | Native mode needs |
 |---|---|
-| **Linux** | `sudo ./go-deadman` **or** `sudo setcap cap_net_raw=+ep ./go-deadman` |
-| **Windows** | Run the `.exe` as **Administrator** |
-| **macOS** | `sudo ./go-deadman` |
+| **Linux** | Unprivileged ICMP (`net.ipv4.ping_group_range`) — enabled on most distros |
+| **macOS** | Nothing extra |
+| **Windows** | Run as **Administrator** |
 
-> If privileges are not available, the app **automatically falls back** to parsing the OS native `ping` command. Targets using the fallback will not show the `*` indicator.
+Without it, the target **automatically falls back** to the OS `ping` command. Native targets are marked with `*` next to SNT.
 
 ---
 
-## ⚙️ Configuration Reference
+## ⚙️ Configuration
 
-Both `internet.yaml` and `tasks.yaml` follow the same schema:
+Presets live in [`presets/`](presets/) and share one schema:
 
 ```yaml
-interval: 1s       # Base ping interval (e.g., "1s", "500ms", "2s")
-jitter: 0.1        # ±10% random timing variation applied in fallback mode
+interval: 1s       # probe interval, Go duration, >= 100ms (default 1s)
+jitter: 0.1        # ±10% random spacing in fallback mode, 0 < jitter < 1 (default 0.1)
 devices:
-  - name: "Cloudflare-Anycast"
+  - name: "Cloudflare"
     ip: "1.1.1.1"
-  - name: "Google-DNS"
-    ip: "8.8.8.8"
-  - name: "---"          # Renders as a visual separator line
-  - name: "My-Router"
-    ip: "192.168.1.1"
+  - name: "---"          # separator row
+  - name: "nas.lan"      # name only → IP resolved via DNS
+  - ip: "192.168.1.1"    # IP only → name via reverse DNS
 ```
 
-### Field Reference
-
-| Field | Type | Description |
-|---|---|---|
-| `interval` | `string` | Ping send interval. Parsed as Go `time.Duration`. Default: `1s` |
-| `jitter` | `float64` | Fractional timing jitter for fallback mode (0.1 = ±10%). Default: `0.1` |
-| `devices[].name` | `string` | Display name. Use `"---"` for a separator row. Omit to auto-resolve from IP |
-| `devices[].ip` | `string` | Target IP address. Omit to auto-resolve from hostname |
-
-> 💡 You can provide **only `name`** (hostname) or **only `ip`** — the app resolves the missing field automatically via DNS.
+The config is validated at startup (interval, jitter range, every device has a name or a valid IP); an invalid file exits with an error message. Unknown keys are ignored.
 
 ---
 
-## 📊 Dashboard Reference
+## 📊 Dashboard
 
 ```
-                              go-deadman
-       From: myhost  Version: v1.11.0  loss+rtt+avg+jitter+history
-
-  HOSTNAME              ADDRESS          LOSS  RTT(ms)  AVG(ms)  JIT(ms)   SNT  HISTORY
-  ─────────────────────────────────────────────────────────────────────────────────────────
-  Cloudflare-Anycast    1.1.1.1           0%    2.341    2.298    0.103   142*  ▄▄▃▃▄▃▄▄▅▃
-  Google-DNS            8.8.8.8           0%    4.102    4.011    0.214   142*  ▃▃▃▄▃▃▄▃▃▃
-  ─────────────────────────────────────────────────────────────────────────────────────────
-  My-Router             192.168.1.1       2%    0.812    0.799    0.031   142*  ▁▁▁·▁▁▁▁▁▁
-
-  Interval: 1s  App Jitter: 10%  *: Native  Window: 50
+  HOSTNAME             ADDRESS               LOSS  RTT(ms)  AVG(ms)  JIT(ms)   SNT   HISTORY
+  ────────────────────────────────────────────────────────────────────────────────────────────
+  Cloudflare           1.1.1.1                 0%    2.341    2.298    0.103   142*  ▃▃▃▃▄▃▄▃
+  HiNet-DNS            168.95.1.1            0.7%     FAIL    4.011    0.214   142*  ▃▃▃▄▃▃▃·
 ```
 
-| Column | Description |
+| Column | Meaning |
 |---|---|
-| **HOSTNAME** | Resolved or configured device name |
-| **ADDRESS** | Target IP address |
-| **LOSS** | Cumulative packet loss percentage |
-| **RTT(ms)** | Round-trip time of the most recent successful ping |
-| **AVG(ms)** | Moving average RTT over the last 50 packets (`WINDOW_SIZE`) |
-| **JIT(ms)** | Average absolute deviation between consecutive RTT values |
-| **SNT** | Total packets sent since start |
-| **`*` Tag** | Present when using native Go ICMP socket; absent in OS fallback mode |
-| **HISTORY** | Sparkline of the last N pings; height = log-scaled RTT; `·` = dropped packet |
+| **LOSS** | Lost ÷ SNT. Non-zero loss is never shown as `0%` (`<0.1%`, one decimal below 10%), and is never rounded up to `100%` |
+| **RTT** | Most recent successful RTT; shows **`FAIL`** (row in red) when the latest probe failed |
+| **AVG** | Mean of the last 50 successful RTTs |
+| **JIT** | Mean absolute difference between RTTs of *adjacent successful* probes (last 50 pairs); pairs never span a lost probe. Same rule for native and fallback |
+| **SNT** | Settled probes (replied or timed out). In-flight probes are not counted; each sequence number is counted once, and late replies after a timeout are ignored |
+| **HISTORY** | Most recent probe on the left |
+
+On narrow terminals columns are dropped in this order: HISTORY, SNT, JIT, AVG, ADDRESS, LOSS. HOSTNAME and RTT are always shown.
+
+The probe timeout is `max(interval, 1s)` for both native and fallback modes. The screen is only redrawn when data changes, at most 20 times per second.
 
 ---
 
-## 🧠 Core Module Logic
+## 🗂️ Layout
 
-### 1. `//go:embed` — Zero-Config Binary
-
-```go
-//go:embed config.yaml
-var embeddedYaml []byte
-```
-
-The YAML configuration is compiled directly into the binary at build time. At runtime, `main()` unmarshals this byte slice — no external files required.
-
----
-
-### 2. `resolveAndStartWorker` — DNS Resolution & Worker Dispatch
-
-Each device entry launches a goroutine that:
-1. **Resolves** missing hostname ↔ IP pairs via `net.LookupIP` / `net.LookupAddr`
-2. Sets `IsDNSFail = true` and skips pinging if resolution fails
-3. Hands off to `deviceWorker` (native) or `fallbackWorker` (OS command)
-
----
-
-### 3. `deviceWorker` — Event-Driven ICMP Engine (Primary Path)
-
-This is the performance-critical path, implementing a **socket-reuse, event-callback** architecture:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  probing.NewPinger  →  Count = -1 (infinite send mode)  │
-│                                                         │
-│  OnRecv callback → recvCh (buffered channel, cap 100)   │
-│                                                         │
-│  Main select loop:                                      │
-│   ├─ recvCh:   packet received → fill gap losses →      │
-│   │            UpdateStats(rtt, true)                   │
-│   ├─ timer.C:  timeout → UpdateStats(0, false)          │
-│   └─ errCh:    pinger error → fallback                  │
-└─────────────────────────────────────────────────────────┘
-```
-
-**Sequence gap filling**: If `pkt.Seq` skips ahead (consecutive drops), the worker immediately back-fills `UpdateStats(0, false)` for each missing sequence number before recording the received packet. This guarantees history graph accuracy even during burst loss events.
-
----
-
-### 4. `fallbackWorker` — OS `ping` Command Fallback
-
-When native ICMP sockets are unavailable, the worker:
-1. Spawns `ping -n 1` (Windows) or `ping -c 1` (Linux/macOS) per interval
-2. Parses RTT from stdout via `parseRTT()` — supports both English (`time=`) and Chinese (`時間=`) system locales
-3. Applies configurable `jitter` to the sleep interval to prevent thundering-herd effects across many devices
-
----
-
-### 5. `UpdateStats` — Thread-Safe Metrics Engine
-
-```go
-func (d *Device) UpdateStats(rtt float64, success bool) {
-    d.mu.Lock()
-    defer d.mu.Unlock()
-    // Updates: Snt, Loss, LossRate, Window (sliding), AvgRTT, Jitter, History ring buffer
-}
-```
-
-- Uses a **`sync.RWMutex`** — write-locked during stats update, read-locked during UI rendering
-- **Sliding window** (`WINDOW_SIZE = 50`): RTT history for avg and jitter calculation
-- **Ring buffer** (`HIST_SIZE = 100`): Fixed-size circular history for the sparkline
-
----
-
-### 6. `getLogChar` — Logarithmic Sparkline Encoder
-
-```go
-idx := int(math.Log(math.Max(1, rtt)) / math.Log(2.4))
-scales := []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
-```
-
-RTT is mapped to a block character using **base-2.4 logarithm**, so:
-- `~1ms` → `▁`, `~6ms` → `▃`, `~35ms` → `▆`, `>200ms` → `█`
-- `·` is shown for dropped packets (`success == false`)
-
----
-
-### 7. Bubble Tea Event Loop — TUI Lifecycle
-
-| Method | Responsibility |
+| File | Contents |
 |---|---|
-| `Init()` | Parses interval, spawns one goroutine per device, starts `tickCmd()` |
-| `Update()` | Handles `WindowSizeMsg`, `KeyMsg` (`q`/`Ctrl+C`), and `tickMsg` for re-render |
-| `View()` | Renders the full dashboard string on every tick (20 FPS) with dynamic column widths |
-
-The UI re-renders at **20 FPS** (`RENDER_FPS = 20`) driven by `tea.Tick`. All device data is read under `d.mu.RLock()` to prevent data races with background goroutines.
+| `main.go` | Flags, config source selection, program start |
+| `config.go` | `Config`, `loadConfig` (parse, defaults, validation) |
+| `stats.go` | `Device`, `UpdateStats`, loss formatting, sparkline |
+| `ping.go` | DNS resolution, native worker + `probeTracker`, fallback worker, `parseRTT` |
+| `ui.go` | Bubble Tea model, on-demand redraw, width-aware layout |
+| `preset_*.go` | Build-tag selection of the embedded preset |
+| `presets/` | `internet.yaml` (global / Taiwan backbone), `tasks.yaml` (LAN) |
+| `winres/` | Windows icon and version-info manifest |
 
 ---
 
-## 🤖 CI/CD Pipeline
+## 🧪 Development
 
-| Trigger | Jobs Executed |
+```bash
+gofmt -l .
+go vet ./... && go vet -tags tasks ./...
+go test ./...                     # add -race where cgo is available
+go test -tags tasks ./...
+go test -run '^TestProbeTracker$' -count=1 .
+```
+
+---
+
+## 🤖 CI/CD
+
+`.github/workflows/build.yml`:
+
+| Trigger | Jobs |
 |---|---|
-| Push to `main` | `lint` (golangci-lint + govulncheck + gosec) |
-| Push tag `v*` | `lint` → `build` (matrix) → `release` |
-| Manual dispatch | `lint` → `build` |
+| Push / PR to `main` | `test`: tidy check, gofmt, vet, `go test -race` (both presets), golangci-lint, govulncheck, gosec |
+| Tag `v*` | `test` → `build` → `release` (binaries + `SHA256SUMS.txt`) |
+| Manual dispatch | `test` → `build` |
 
-### Build Matrix
-
-| Config | OS | Arch | Output |
-|---|---|---|---|
-| `internet` | Windows | amd64 | `deadman-internet-windows-amd64.exe` |
-| `tasks` | Windows | amd64 | `deadman-tasks-windows-amd64.exe` |
-
-Each build automatically:
-1. Copies the appropriate preset YAML as `config.yaml`
-2. Embeds Windows resources (icon + version) via `go-winres`
-3. Compiles with `-ldflags="-s -w" -trimpath` for minimal binary size
-4. Uploads artifact with 7-day retention; publishes to GitHub Release on tag push
+`build` produces `deadman-{internet,tasks}-windows-amd64.exe`. The tag is injected as the app version (`-X main.version`) and as the Windows file/product version (`go-winres`). Dependabot keeps Go modules and Actions up to date.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **MIT License**.  
-Copyright © 2026 go-deadman.
+MIT License. Copyright © 2026 go-deadman contributors.
