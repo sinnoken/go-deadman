@@ -25,7 +25,7 @@ gosec ./...
 
 Run a single test with `go test ./internal/monitor -run '^TestName$' -count=1`.
 
-CI builds Windows amd64 zips for both presets on `v*` tags or manual dispatch.
+CI builds Windows amd64 and macOS arm64 zips for both presets on `v*` tags or manual dispatch.
 The tag is injected via `-X main.version` and `go-winres make --in
 winres/winres.json --out cmd/go-deadman/rsrc --product-version/--file-version`;
 binaries get a build-provenance attestation.

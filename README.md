@@ -28,10 +28,19 @@ Inspired by [upa/deadman](https://github.com/upa/deadman).
 
 Grab a zip from [Releases](https://github.com/sinnoken/go-deadman/releases):
 
-| Asset | Embedded targets |
-|---|---|
-| `go-deadman-internet-windows-amd64.zip` | Global ISPs, cloud anycast, IXPs, DNS, Taiwan ISPs |
-| `go-deadman-tasks-windows-amd64.zip` | LAN targets |
+| Asset | Platform | Embedded targets |
+|---|---|---|
+| `go-deadman-internet-windows-amd64.zip` | Windows x64 | Global ISPs, cloud anycast, IXPs, DNS, Taiwan ISPs |
+| `go-deadman-tasks-windows-amd64.zip` | Windows x64 | LAN targets |
+| `go-deadman-internet-darwin-arm64.zip` | macOS Apple Silicon (M-series, MacBook Neo) | Global ISPs, cloud anycast, IXPs, DNS, Taiwan ISPs |
+| `go-deadman-tasks-darwin-arm64.zip` | macOS Apple Silicon (M-series, MacBook Neo) | LAN targets |
+
+On macOS the binary is ad-hoc signed but not notarized, so Gatekeeper blocks it after a browser download. Clear the quarantine flag once:
+
+```bash
+xattr -d com.apple.quarantine ./go-deadman
+./go-deadman
+```
 
 Each release ships `SHA256SUMS.txt`, and every binary has a GitHub build-provenance attestation, so you can prove it was built by this repository's CI from a specific commit:
 

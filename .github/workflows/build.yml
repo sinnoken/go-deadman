@@ -73,8 +73,12 @@ jobs:
     strategy:
       matrix:
         preset: [internet, tasks]
-        goos: [windows]
-        goarch: [amd64]
+        goos: [windows, darwin]
+        include:
+          - goos: windows
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64   # Apple Silicon（含 MacBook Neo）；Go linker 會自動 ad-hoc 簽章
     env:
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
