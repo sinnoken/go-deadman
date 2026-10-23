@@ -68,8 +68,6 @@ devices:
     ip: "61.31.233.1"
   - name: "Kbro-Cable-Net"
     ip: "203.79.224.30"
-  - name: "Homeplus-CNS"
-    ip: "219.85.1.1"
   - name: "So-net-Taiwan"
     ip: "61.64.127.2"
   - name: "APTG-Telecom"

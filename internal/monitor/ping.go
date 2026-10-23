@@ -20,49 +20,130 @@ func probeTimeout(interval time.Duration) time.Duration {
 	return max(interval, time.Second)
 }
 
-func resolveAndStartWorker(d *Device, interval time.Duration, jitter float64) {
+// sleepCtx 等待 d；ctx 先被取消時回傳 false
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// randOffset 讓各目標的發送時間錯開
+func randOffset(interval time.Duration) time.Duration {
+	// #nosec G404 -- 只用於錯開時間，不涉及安全
+	return time.Duration(rand.Float64() * float64(interval))
+}
+
+// ---------------------------------------------------------
+// DNS 解析：名稱解析失敗時以退避方式持續重試
+// ---------------------------------------------------------
+
+// 可於測試替換
+var (
+	dnsRetryMin = 5 * time.Second
+	dnsRetryMax = 60 * time.Second
+
+	lookupIP = func(ctx context.Context, host string) ([]net.IP, error) {
+		return net.DefaultResolver.LookupIP(ctx, "ip", host)
+	}
+	lookupAddr = net.DefaultResolver.LookupAddr
+)
+
+func nextBackoff(cur time.Duration) time.Duration {
+	if cur < dnsRetryMin {
+		return dnsRetryMin
+	}
+	return min(cur*2, dnsRetryMax)
+}
+
+func runDevice(ctx context.Context, d *Device, interval time.Duration, jitter float64) {
 	d.mu.RLock()
 	name, ip := d.Name, d.IP
 	d.mu.RUnlock()
 
-	isFail := false
 	if name == "" && ip != "" {
-		names, err := net.LookupAddr(ip)
-		if err == nil && len(names) > 0 {
+		if names, err := lookupAddr(ctx, ip); err == nil && len(names) > 0 {
 			name = strings.TrimSuffix(names[0], ".")
 		} else {
 			name = ip
 		}
-	} else if ip == "" && name != "" {
-		ips, err := net.LookupIP(name)
-		if err == nil && len(ips) > 0 {
+	}
+
+	var backoff time.Duration
+	for ip == "" {
+		if ips, err := lookupIP(ctx, name); err == nil && len(ips) > 0 {
 			ip = ips[0].String()
-		} else {
-			ip = "DNS_FAIL"
-			isFail = true
+			break
+		}
+		d.mu.Lock()
+		d.Name, d.IP, d.IsDNSFail, d.Loading = name, "DNS_FAIL", true, false
+		d.mu.Unlock()
+		signalUpdate()
+
+		backoff = nextBackoff(backoff)
+		if !sleepCtx(ctx, backoff) {
+			return
 		}
 	}
 
 	d.mu.Lock()
-	d.Name = name
-	d.IP = ip
-	d.IsDNSFail = isFail
-	d.Loading = !isFail
+	d.Name, d.IP, d.IsDNSFail, d.Loading = name, ip, false, true
 	d.mu.Unlock()
 	signalUpdate()
 
-	if !isFail {
-		deviceWorker(d, ip, interval, jitter)
+	deviceWorker(ctx, d, ip, interval, jitter)
+}
+
+func deviceWorker(ctx context.Context, d *Device, ip string, interval time.Duration, jitter float64) {
+	if !sleepCtx(ctx, randOffset(interval)) {
+		return
 	}
+	if runNative(ctx, d, ip, interval) {
+		return
+	}
+	fallbackWorker(ctx, d, ip, interval, jitter)
 }
 
 // ---------------------------------------------------------
-// Native：pro-bing 無窮發送模式重用同一個 socket
+// Native：持續發送的 ICMP session，以序號結算每個探測
 // ---------------------------------------------------------
+
+// echoSession 是 native ICMP 實作的抽象，讓 worker 主迴圈可以用假物件測試。
+// Run 會持續發送直到 Stop 或發生錯誤；每次送出與收到回覆都要呼叫對應的 handler。
+type echoSession interface {
+	Run() error
+	Stop()
+}
+
+type echoHandlers struct {
+	onSend func(seq int)
+	onRecv func(seq int, rtt time.Duration)
+}
+
+// newEchoSession 可於測試替換
+var newEchoSession = newProBingSession
+
+func newProBingSession(ip string, interval time.Duration, h echoHandlers) (echoSession, error) {
+	p, err := probing.NewPinger(ip)
+	if err != nil {
+		return nil, err
+	}
+	p.Count = -1
+	p.Interval = interval
+	p.RecordRtts = false // 無窮發送時避免 RTT 陣列無限增長
+	p.SetPrivileged(runtime.GOOS == "windows")
+	p.OnSend = func(pkt *probing.Packet) { h.onSend(pkt.Seq) }
+	p.OnRecv = func(pkt *probing.Packet) { h.onRecv(pkt.Seq, pkt.Rtt) }
+	return p, nil
+}
 
 // probeTracker 以序號追蹤在途探測，確保每個序號最多結算一次：
 // 先回覆的記成功，逾時的記丟包，逾時後才到的回覆直接丟棄。
-// 以 map 為 key，pro-bing 序號在 65535 繞回時也不受影響。
+// 以 map 為 key，序號在 65535 繞回時也不受影響。
 type probeTracker struct {
 	pending map[int]time.Time
 }
@@ -102,32 +183,25 @@ type probeEvent struct {
 	rtt  float64
 }
 
-func deviceWorker(d *Device, ip string, interval time.Duration, jitter float64) {
-	// #nosec G404
-	time.Sleep(time.Duration(rand.Float64() * float64(interval)))
-
-	pinger, err := probing.NewPinger(ip)
-	if err != nil {
-		fallbackWorker(d, ip, interval, jitter)
-		return
-	}
-	pinger.Count = -1
-	pinger.Interval = interval
-	pinger.RecordRtts = false // 無窮發送時避免 RTT 陣列無限增長
-	pinger.SetPrivileged(runtime.GOOS == "windows")
-
+// runNative 回傳 true 表示因 ctx 取消而正常結束；false 表示 native 無法使用，應改用 fallback
+func runNative(ctx context.Context, d *Device, ip string, interval time.Duration) bool {
 	// 送出與回覆走同一個 channel，保證 sent 一定先於對應的 recv 被處理
 	events := make(chan probeEvent, 100)
-	pinger.OnSend = func(pkt *probing.Packet) {
-		events <- probeEvent{seq: pkt.Seq}
-	}
-	pinger.OnRecv = func(pkt *probing.Packet) {
-		events <- probeEvent{seq: pkt.Seq, recv: true, rtt: float64(pkt.Rtt) / float64(time.Millisecond)}
+	sess, err := newEchoSession(ip, interval, echoHandlers{
+		onSend: func(seq int) { events <- probeEvent{seq: seq} },
+		onRecv: func(seq int, rtt time.Duration) {
+			events <- probeEvent{seq: seq, recv: true, rtt: float64(rtt) / float64(time.Millisecond)}
+		},
+	})
+	if err != nil {
+		return false
 	}
 
-	errCh := make(chan error, 1)
+	// Run 結束（不論 error 為何）只代表 session 停了；是取消造成或 native 不可用，由 ctx 判斷
+	runDone := make(chan struct{})
 	go func() {
-		errCh <- pinger.Run()
+		_ = sess.Run()
+		close(runDone)
 	}()
 
 	tracker := newProbeTracker()
@@ -137,11 +211,19 @@ func deviceWorker(d *Device, ip string, interval time.Duration, jitter float64) 
 
 	for {
 		select {
-		case err := <-errCh:
-			// 無窮模式下 Run 結束即代表 native 無法使用（不論 err 是否為 nil），改用系統 ping
-			_ = err
-			fallbackWorker(d, ip, interval, jitter)
-			return
+		case <-ctx.Done():
+			sess.Stop()
+			for { // 持續排空 events，避免 Run 卡在 handler 上
+				select {
+				case <-runDone:
+					return true
+				case <-events:
+				}
+			}
+
+		case <-runDone:
+			// 無窮模式下 Run 自行結束即代表 native 無法使用
+			return false
 
 		case ev := <-events:
 			if !ev.recv {
@@ -175,12 +257,21 @@ func pingArgs(goos, ip string, timeout time.Duration) []string {
 	}
 }
 
-func fallbackWorker(d *Device, ip string, interval time.Duration, jitter float64) {
-	// #nosec G404
-	time.Sleep(time.Duration(rand.Float64() * float64(interval)))
+// runPing 執行一次系統 ping 並回傳 stdout；可於測試替換
+var runPing = func(ctx context.Context, ip string, timeout time.Duration) string {
+	cctx, cancel := context.WithTimeout(ctx, timeout+500*time.Millisecond)
+	defer cancel()
+	// #nosec G204 -- ip 已通過 net.ParseIP 驗證
+	cmd := exec.CommandContext(cctx, "ping", pingArgs(runtime.GOOS, ip, timeout)...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	_ = cmd.Run()
+	return out.String()
+}
 
+func fallbackWorker(ctx context.Context, d *Device, ip string, interval time.Duration, jitter float64) {
 	timeout := probeTimeout(interval)
-	var outBuf bytes.Buffer
+	valid := net.ParseIP(ip) != nil
 
 	for {
 		start := time.Now()
@@ -190,27 +281,22 @@ func fallbackWorker(d *Device, ip string, interval time.Duration, jitter float64
 		d.mu.Unlock()
 		signalUpdate()
 
-		// resolve 階段已確保是 IP，這裡再次檢查以滿足 gosec
-		if net.ParseIP(ip) == nil {
+		if valid {
+			rtt, ok := parseRTT(runPing(ctx, ip, timeout))
+			if ctx.Err() != nil {
+				return
+			}
+			d.UpdateStats(rtt, ok, false)
+		} else {
 			d.UpdateStats(0, false, false)
-			time.Sleep(interval)
-			continue
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), timeout+500*time.Millisecond)
-		// #nosec G204 -- ip 已通過 net.ParseIP 驗證
-		cmd := exec.CommandContext(ctx, "ping", pingArgs(runtime.GOOS, ip, timeout)...)
-		outBuf.Reset()
-		cmd.Stdout = &outBuf
-		_ = cmd.Run()
-		cancel()
-
-		rtt, success := parseRTT(outBuf.String())
-		d.UpdateStats(rtt, success, false)
-
 		baseWait := max(float64(interval-time.Since(start)), 0)
-		// #nosec G404
-		time.Sleep(time.Duration(baseWait * (1 + (rand.Float64()*2-1)*jitter)))
+		// #nosec G404 -- 只用於錯開時間，不涉及安全
+		wait := time.Duration(baseWait * (1 + (rand.Float64()*2-1)*jitter))
+		if !sleepCtx(ctx, wait) {
+			return
+		}
 	}
 }
 

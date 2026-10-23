@@ -29,11 +29,12 @@ type model struct {
 	cfg      monitor.Config
 	width    int
 	height   int
+	offset   int // 第一個可見資料列的索引
 	hostname string
 	version  string
 }
 
-// New 建立儀表板 model；Init 時才啟動 ping worker
+// New 建立儀表板 model；worker 由呼叫端以 cfg.Start 啟動
 func New(cfg monitor.Config, hostname, version string) tea.Model {
 	return model{cfg: cfg, hostname: hostname, version: version}
 }
@@ -53,7 +54,6 @@ func waitForUpdate() tea.Cmd {
 }
 
 func (m model) Init() tea.Cmd {
-	m.cfg.Start()
 	return waitForUpdate()
 }
 
@@ -61,9 +61,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.offset = m.clampOffset(m.offset)
 	case tea.KeyMsg:
-		if msg.String() == "q" || msg.String() == "ctrl+c" {
+		page := m.visibleRows()
+		switch msg.String() {
+		case "q", "ctrl+c":
 			return m, tea.Quit
+		case "up", "k":
+			m.offset = m.clampOffset(m.offset - 1)
+		case "down", "j":
+			m.offset = m.clampOffset(m.offset + 1)
+		case "pgup", "b":
+			m.offset = m.clampOffset(m.offset - page)
+		case "pgdown", "f", " ":
+			m.offset = m.clampOffset(m.offset + page)
+		case "home", "g":
+			m.offset = 0
+		case "end", "G":
+			m.offset = m.clampOffset(len(m.cfg.Devices))
 		}
 	case dataMsg:
 		// 本次已重繪；等一個 frame 再接收下一批更新
@@ -72,6 +87,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitForUpdate()
 	}
 	return m, nil
+}
+
+// ---------------------------------------------------------
+// 垂直捲動
+// ---------------------------------------------------------
+
+// 資料列以外的固定行數：標題、副標、空行、表頭、橫線（上方 5 行）＋ 空行、footer（下方 2 行）
+const chromeRows = 7
+
+// visibleRows 是一頁可顯示的資料列數（含分隔列），至少 1
+func (m model) visibleRows() int {
+	return max(m.height-chromeRows, 1)
+}
+
+func (m model) clampOffset(off int) int {
+	return max(min(off, len(m.cfg.Devices)-m.visibleRows()), 0)
 }
 
 // ---------------------------------------------------------
@@ -258,7 +289,10 @@ func (m model) View() string {
 	s.WriteString(headerStyle.Render(truncWidth(header, m.width)) + "\n")
 	s.WriteString(dimStyle.Render(strings.Repeat("─", m.width)) + "\n")
 
-	for _, d := range m.cfg.Devices {
+	devices := m.cfg.Devices
+	off := m.clampOffset(m.offset)
+	end := min(off+m.visibleRows(), len(devices))
+	for _, d := range devices[off:end] {
 		if d.IsSeparator() {
 			s.WriteString(dimStyle.Render(strings.Repeat(" ", indW)+strings.Repeat("-", max(m.width-indW, 0))) + "\n")
 			continue
@@ -268,6 +302,9 @@ func (m model) View() string {
 
 	footer := fmt.Sprintf(" Interval: %s | App Jitter: %.f%% | *: Native | Window: %d | FAIL: latest probe failed",
 		m.cfg.Interval, m.cfg.Jitter*100, monitor.WindowSize)
+	if off > 0 || end < len(devices) {
+		footer = fmt.Sprintf(" Rows %d-%d/%d (↑↓ PgUp PgDn) |", off+1, end, len(devices)) + footer
+	}
 	s.WriteString("\n" + dimStyle.Render(truncWidth(footer, m.width)))
 	return s.String()
 }
@@ -313,7 +350,7 @@ func renderRow(l layout, ds monitor.Snapshot) string {
 	if l.hist > 0 {
 		hist.WriteString(strings.Repeat(" ", histGapW))
 		if ds.DNSFail {
-			hist.WriteString(downStyle.Render(truncWidth("DNS RESOLVE FAILED", l.hist)))
+			hist.WriteString(downStyle.Render(truncWidth("DNS RESOLVE FAILED, retrying", l.hist)))
 		} else {
 			for j := 1; j <= min(ds.HistCount, l.hist); j++ {
 				h := ds.Recent(j)

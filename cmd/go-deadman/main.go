@@ -4,9 +4,11 @@ package main
 //go:generate go-winres make --in ../../winres/winres.json --product-version=git-tag --file-version=git-tag
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -16,7 +18,7 @@ import (
 )
 
 // version 於 CI 建置時以 -ldflags "-X main.version=..." 覆寫為 tag 名稱
-var version = "v1.12.0"
+var version = "v1.13.0"
 
 func main() {
 	configPath := flag.String("config", "", "外部 YAML 設定檔路徑；未指定時使用內嵌的 "+presets.Name+" preset")
@@ -46,10 +48,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	wait := cfg.Start(ctx)
+
 	hostname, _ := os.Hostname()
 	p := tea.NewProgram(tui.New(cfg, hostname, version), tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running program: %v\n", err)
+	_, runErr := p.Run()
+
+	// 停止所有 worker（含 pinger 與 ping 子行程）；最多等 2 秒
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+	}
+
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "Error running program: %v\n", runErr)
 		os.Exit(1)
 	}
 }

@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"os"
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"go-deadman/internal/monitor"
@@ -108,5 +110,88 @@ func TestFormatLoss(t *testing.T) {
 		if len(got) > lossW {
 			t.Errorf("formatLoss(%v) = %q exceeds %d chars", rate, got, lossW)
 		}
+	}
+}
+
+func presetModel(t *testing.T, width, height int) model {
+	t.Helper()
+	data, err := os.ReadFile("../../presets/internet.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := monitor.LoadConfig(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return model{cfg: cfg, width: width, height: height, hostname: "h", version: "v"}
+}
+
+func press(m model, key string) model {
+	var msg tea.KeyMsg
+	switch key {
+	case "up":
+		msg = tea.KeyMsg{Type: tea.KeyUp}
+	case "down":
+		msg = tea.KeyMsg{Type: tea.KeyDown}
+	case "pgdown":
+		msg = tea.KeyMsg{Type: tea.KeyPgDown}
+	case "end":
+		msg = tea.KeyMsg{Type: tea.KeyEnd}
+	case "home":
+		msg = tea.KeyMsg{Type: tea.KeyHome}
+	default:
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+	}
+	next, _ := m.Update(msg)
+	return next.(model)
+}
+
+func TestViewFitsHeight(t *testing.T) {
+	for height := 8; height <= 60; height++ {
+		m := presetModel(t, 120, height)
+		for _, key := range []string{"", "pgdown", "end"} {
+			if key != "" {
+				m = press(m, key)
+			}
+			if n := strings.Count(m.View(), "\n") + 1; n > height {
+				t.Fatalf("height %d after %q: %d lines", height, key, n)
+			}
+		}
+	}
+}
+
+func TestScrolling(t *testing.T) {
+	m := presetModel(t, 120, 20)
+	first, last := "Lumen-Level3", "Google-IDC-Taiwan"
+	if v := m.View(); !strings.Contains(v, first) || strings.Contains(v, last) || !strings.Contains(v, "Rows 1-13/") {
+		t.Fatalf("initial view wrong:\n%s", v)
+	}
+	m = press(m, "end")
+	if v := m.View(); !strings.Contains(v, last) || strings.Contains(v, first) {
+		t.Fatalf("end should show last target:\n%s", v)
+	}
+	if press(m, "down").offset != m.offset {
+		t.Error("scrolling past the end should be clamped")
+	}
+	m = press(m, "home")
+	if m.offset != 0 || press(m, "up").offset != 0 {
+		t.Error("home/up should clamp at 0")
+	}
+	if press(m, "j").offset != 1 || press(press(m, "j"), "k").offset != 0 {
+		t.Error("j/k should scroll by one row")
+	}
+
+	// 視窗放大到能顯示全部時，offset 歸零且不顯示 Rows 提示
+	m = press(m, "end")
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 80})
+	if v := next.(model).View(); strings.Contains(v, "Rows ") || !strings.Contains(v, first) {
+		t.Error("full-height view should not scroll")
+	}
+}
+
+func TestQuitKey(t *testing.T) {
+	_, cmd := presetModel(t, 80, 20).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if cmd == nil {
+		t.Fatal("q should return tea.Quit")
 	}
 }

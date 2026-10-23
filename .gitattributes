@@ -1,0 +1,4 @@
+# 統一以 LF 存放與 checkout，避免 Windows 上的 CRLF 轉換警告與 gofmt 差異
+* text=auto eol=lf
+*.png binary
+*.jpg binary

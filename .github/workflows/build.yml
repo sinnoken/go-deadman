@@ -18,9 +18,9 @@ jobs:
     name: Test, lint and security scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: stable
 
@@ -44,26 +44,48 @@ jobs:
           go test -race -count=1 ./...
           go test -race -count=1 -tags tasks ./...
 
+      - name: Coverage (internal/monitor >= 80%)
+        run: |
+          pct=$(go test -count=1 -cover ./internal/monitor | grep -oE '[0-9.]+% of statements' | cut -d% -f1)
+          echo "internal/monitor coverage: ${pct}%" | tee -a "$GITHUB_STEP_SUMMARY"
+          awk -v p="$pct" 'BEGIN { exit !(p >= 80) }'
+
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: latest
+          version: v2.15.0
           args: --timeout=5m
 
       - name: govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           govulncheck ./...
 
       - name: gosec
         run: |
-          # v2.29.0 讀不了 Go 1.27 的 export data（version 5）；正式版支援後改回 @latest
-          go install github.com/securego/gosec/v2/cmd/gosec@master
+          # v2.29.0 讀不了 Go 1.27 的 export data（version 5），暫時鎖定 master 上的 commit；
+          # 正式版支援 Go 1.27 後改成鎖定版本號
+          go install github.com/securego/gosec/v2/cmd/gosec@1cbfd7e6488c2464f18603623354de1be9565b39
           gosec ./...
+
+  test-os:
+    name: Test on ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: stable
+
+      - run: go test -count=1 ./...
 
   build:
     name: Build ${{ matrix.preset }} ${{ matrix.goos }}-${{ matrix.goarch }}
-    needs: test
+    needs: [test, test-os]
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
@@ -84,9 +106,9 @@ jobs:
       GOARCH: ${{ matrix.goarch }}
       CGO_ENABLED: '0'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: stable
 
@@ -105,7 +127,7 @@ jobs:
       - name: Windows resources (go-winres)
         if: matrix.goos == 'windows'
         run: |
-          GOOS= GOARCH= go install github.com/tc-hib/go-winres@latest
+          GOOS= GOARCH= go install github.com/tc-hib/go-winres@v0.3.3
           go-winres make --in winres/winres.json --out cmd/go-deadman/rsrc \
             --arch "${{ matrix.goarch }}" \
             --product-version "${{ steps.ver.outputs.numeric }}" \
@@ -127,13 +149,13 @@ jobs:
 
       - name: Attest build provenance
         if: github.event_name != 'pull_request'
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
           subject-path: |
             ${{ steps.build.outputs.exe }}
             dist/*.zip
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: go-deadman-${{ matrix.preset }}-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
@@ -146,7 +168,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
           pattern: go-deadman-*

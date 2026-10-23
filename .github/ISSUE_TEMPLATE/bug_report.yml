@@ -1,0 +1,36 @@
+name: Bug report
+description: Something is measured or displayed incorrectly, or the program fails
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `go-deadman -version`
+      placeholder: go-deadman v1.13.0 (preset: internet)
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Ping mode
+      description: Native targets show `*` after SNT
+      options: [Native (*), Fallback (no *), Not sure]
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Config (if using -config)
+      render: yaml

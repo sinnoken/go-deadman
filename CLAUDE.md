@@ -19,14 +19,17 @@ go test ./internal/monitor -run '^TestName$' -count=1
 - 使用者本機可能沒有安裝 Go，平常靠 GitHub Actions 編譯與驗證。若需要在本機驗證，就在 scratchpad 放一份免安裝的 Go 來跑，不要裝到系統上。
 - Windows 本機沒有 cgo，`-race` 只在 CI 上跑。
 - CI 會執行 `go mod tidy -diff` 與 `gofmt -l .`，go.mod 沒 tidy 或沒跑 gofmt 都會失敗。
+- CI 的 action 都鎖 commit SHA、工具都鎖版本；更新時一併更新註解中的版本號。gosec 目前鎖在 master 的 commit，因為正式版 v2.29.0 不支援 Go 1.27。
 
 ## 架構重點
 
 - 結構：`cmd/go-deadman`（進入點）、`internal/monitor`（設定、worker、統計）、`internal/tui`（畫面）、`presets`（YAML 與 build tag 內嵌）。
 - `LoadConfig` 負責驗證與標記分隔列。`isSep` 在 worker 啟動前設定、之後唯讀，所以 `IsSeparator()` 不需加鎖；其他 Device 欄位一律經 `mu` 存取，畫面透過 `Snapshot()` 讀取。
 - 兩條 ping 路徑的結果都只能經 `Device.UpdateStats` 寫入。native 路徑以 `probeTracker` 讓每個序號只結算一次；`OnSend` 與 `OnRecv` 共用同一個 channel，以保證處理順序。
+- worker 的生命週期由 `main` 控制：`cfg.Start(ctx)` 啟動，結束時 cancel 並等待（最多 2 秒）。新增任何會等待或阻塞的程式碼，都要能被 ctx 中斷（用 `sleepCtx`、`CommandContext`、`DefaultResolver` 的 ctx 版本）。
+- 測試替換點：`newEchoSession`、`runPing`、`lookupIP`、`lookupAddr`、`dnsRetryMin/Max`。替換後必須在 cleanup 時先停掉 worker 再還原（`worker_test.go` 的 `goWorker`），否則 CI 的 `-race` 會抓到。`internal/monitor` 覆蓋率要維持 ≥ 80%（CI 有門檻）。
 - 重繪是按需觸發：`signalUpdate()` → `monitor.Updates()` → tui 的 `dataMsg`，再以 `renderFPS` 節流。新增會改變畫面的狀態時，記得呼叫 `signalUpdate()`。
-- 欄寬由 `computeLayout` 依優先順序分配；文字寬度一律用 `lipgloss.Width`／`truncWidth`／`fitWidth` 計算（CJK 佔 2 格）。
+- 列數超過 `height - chromeRows` 時以 `offset` 捲動；欄寬由 `computeLayout` 依優先順序分配；文字寬度一律用 `lipgloss.Width`／`truncWidth`／`fitWidth` 計算（CJK 佔 2 格）。
 
 ## 指標定義
 

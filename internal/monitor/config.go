@@ -2,10 +2,12 @@
 package monitor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -77,11 +79,14 @@ func LoadConfig(data []byte) (Config, error) {
 	return cfg, nil
 }
 
-// Start 為每個非分隔列的目標啟動一個 worker goroutine
-func (c Config) Start() {
+// Start 為每個非分隔列的目標啟動一個 worker goroutine；ctx 取消後 worker 會停止
+// （含 pinger 與系統 ping 子行程），回傳的 wait 會等到全部 worker 結束。
+func (c Config) Start(ctx context.Context) (wait func()) {
+	var wg sync.WaitGroup
 	for _, d := range c.Devices {
 		if !d.isSep {
-			go resolveAndStartWorker(d, c.interval, c.Jitter)
+			wg.Go(func() { runDevice(ctx, d, c.interval, c.Jitter) })
 		}
 	}
+	return wg.Wait
 }

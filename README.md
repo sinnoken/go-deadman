@@ -58,7 +58,14 @@ go-deadman -config my.yaml     # use an external config instead
 go-deadman -version
 ```
 
-Press **`q`** or **`Ctrl+C`** to exit.
+| Key | Action |
+|---|---|
+| `↑` `↓` / `k` `j` | Scroll one row |
+| `PgUp` `PgDn` / `b` `f` / `Space` | Scroll one page |
+| `Home` `End` / `g` `G` | Jump to top / bottom |
+| `q` / `Ctrl+C` | Quit (stops all probes and `ping` child processes) |
+
+The list scrolls when it is taller than the terminal; the footer then shows `Rows a-b/n`. Targets whose hostname fails to resolve show `DNS RESOLVE FAILED, retrying` and are retried with backoff (5 s doubling to 60 s), so they start pinging on their own once DNS works.
 
 ### Native ICMP vs fallback
 
@@ -140,7 +147,9 @@ go test ./... && go test -tags tasks ./...    # add -race where cgo is available
 go test ./internal/monitor -run '^TestProbeTracker$' -count=1
 ```
 
-CI (`.github/workflows/build.yml`) runs a tidy check, gofmt, vet, race tests, golangci-lint, govulncheck and gosec on every push and PR. Pushing a `v*` tag builds both presets, attests them and publishes a release; the tag becomes the app version and the Windows file version.
+CI (`.github/workflows/build.yml`) runs a tidy check, gofmt, vet, race tests, a coverage gate (`internal/monitor` ≥ 80%), golangci-lint, govulncheck and gosec on every push and PR, plus `go test` on Windows and macOS runners. All actions are pinned to commit SHAs and tools to fixed versions (Dependabot proposes updates). Pushing a `v*` tag builds every preset/platform, attests the binaries and publishes a release; the tag becomes the app version and the Windows file version.
+
+The ping workers are unit-tested without network access: `newEchoSession`, `runPing` and the DNS lookups are package variables that tests replace with fakes.
 
 ---
 
