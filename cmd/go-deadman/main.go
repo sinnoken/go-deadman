@@ -8,6 +8,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,20 +20,51 @@ import (
 )
 
 // version 於 CI 建置時以 -ldflags "-X main.version=..." 覆寫為 tag 名稱
-var version = "v1.13.0"
+var version = "v1.14.0"
+
+// presetFromExe 讓改名為 go-deadman-<preset>(.exe) 的執行檔預設使用該 preset，
+// 方便在 Windows 上直接雙擊執行不同清單
+func presetFromExe(exe string, names []string) string {
+	base := strings.ToLower(strings.TrimSuffix(filepath.Base(exe), filepath.Ext(exe)))
+	for _, n := range names {
+		if strings.HasSuffix(base, "-"+n) {
+			return n
+		}
+	}
+	return ""
+}
+
+// choosePreset 的優先順序：-preset 參數 > 執行檔名稱 > presets.Default
+func choosePreset(flagValue, exe string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if n := presetFromExe(exe, presets.Names()); n != "" {
+		return n
+	}
+	return presets.Default
+}
 
 func main() {
-	configPath := flag.String("config", "", "外部 YAML 設定檔路徑；未指定時使用內嵌的 "+presets.Name+" preset")
+	presetFlag := flag.String("preset", "", "內嵌 preset 名稱（"+strings.Join(presets.Names(), ", ")+"）；預設 "+presets.Default)
+	configPath := flag.String("config", "", "外部 YAML 設定檔路徑；指定時忽略 -preset")
+	listPresets := flag.Bool("list-presets", false, "列出內嵌 preset 後結束")
 	showVersion := flag.Bool("version", false, "顯示版本後結束")
 	flag.Parse()
 
-	if *showVersion {
-		fmt.Printf("go-deadman %s (preset: %s)\n", version, presets.Name)
+	switch {
+	case *showVersion:
+		fmt.Printf("go-deadman %s\n", version)
+		return
+	case *listPresets:
+		for _, n := range presets.Names() {
+			fmt.Println(n)
+		}
 		return
 	}
 
-	data := presets.Data
-	source := "內嵌 preset " + presets.Name
+	var data []byte
+	var source string
 	if *configPath != "" {
 		// #nosec G304 -- 路徑由執行者以 -config 明確指定
 		b, err := os.ReadFile(*configPath)
@@ -40,6 +73,14 @@ func main() {
 			os.Exit(1)
 		}
 		data, source = b, *configPath
+	} else {
+		name := choosePreset(*presetFlag, os.Args[0])
+		b, err := presets.Get(name)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		data, source = b, "preset "+name
 	}
 
 	cfg, err := monitor.LoadConfig(data)

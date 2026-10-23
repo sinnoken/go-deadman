@@ -1,7 +1,6 @@
 package monitor
 
 import (
-	"os"
 	"testing"
 	"time"
 
@@ -9,25 +8,19 @@ import (
 )
 
 func TestLoadConfigPresets(t *testing.T) {
-	for _, path := range []string{"../../presets/internet.yaml", "../../presets/tasks.yaml"} {
-		data, err := os.ReadFile(path)
+	for _, name := range presets.Names() {
+		data, err := presets.Get(name)
 		if err != nil {
 			t.Fatal(err)
 		}
 		cfg, err := LoadConfig(data)
 		if err != nil {
-			t.Errorf("%s: %v", path, err)
+			t.Errorf("preset %s: %v", name, err)
 			continue
 		}
 		if cfg.interval != time.Second {
-			t.Errorf("%s: interval = %v, want 1s", path, cfg.interval)
+			t.Errorf("preset %s: interval = %v, want 1s", name, cfg.interval)
 		}
-	}
-}
-
-func TestLoadConfigEmbedded(t *testing.T) {
-	if _, err := LoadConfig(presets.Data); err != nil {
-		t.Fatalf("embedded preset %s: %v", presets.Name, err)
 	}
 }
 

@@ -37,12 +37,12 @@ jobs:
       - name: go vet
         run: |
           go vet ./...
-          go vet -tags tasks ./...
+          GOOS=windows go vet ./...
+          GOOS=darwin go vet ./...
 
       - name: go test (race)
         run: |
           go test -race -count=1 ./...
-          go test -race -count=1 -tags tasks ./...
 
       - name: Coverage (internal/monitor >= 80%)
         run: |
@@ -84,7 +84,7 @@ jobs:
       - run: go test -count=1 ./...
 
   build:
-    name: Build ${{ matrix.preset }} ${{ matrix.goos }}-${{ matrix.goarch }}
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
     needs: [test, test-os]
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -94,7 +94,6 @@ jobs:
       attestations: write
     strategy:
       matrix:
-        preset: [internet, tasks]
         goos: [windows, darwin]
         include:
           - goos: windows
@@ -138,9 +137,9 @@ jobs:
         run: |
           exe=go-deadman
           if [ "${{ matrix.goos }}" = "windows" ]; then exe="$exe.exe"; fi
-          pkg="go-deadman-${{ matrix.preset }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          pkg="go-deadman-${{ matrix.goos }}-${{ matrix.goarch }}"
           mkdir -p "stage/$pkg" dist
-          go build -tags "${{ matrix.preset }}" -trimpath \
+          go build -trimpath \
             -ldflags "-s -w -X main.version=${{ steps.ver.outputs.version }}" \
             -o "stage/$pkg/$exe" ./cmd/go-deadman
           cp LICENSE README.md "stage/$pkg/"
@@ -157,7 +156,7 @@ jobs:
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: go-deadman-${{ matrix.preset }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: go-deadman-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
 
   release:

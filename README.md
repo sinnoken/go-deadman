@@ -19,7 +19,7 @@ Inspired by [upa/deadman](https://github.com/upa/deadman).
 - **Metrics** — loss %, last RTT, moving-average RTT, jitter, settled probe count, sparkline history
 - **Fallback** to the OS `ping` command when raw ICMP is unavailable
 - **DNS resolution** — give only a hostname or only an IP
-- **Embedded presets** with a runtime `-config` override
+- **Embedded presets** chosen at runtime (`-preset`), or an external `-config` file
 - **Redraws only when data changes** (max 20 fps)
 
 ---
@@ -28,12 +28,12 @@ Inspired by [upa/deadman](https://github.com/upa/deadman).
 
 Grab a zip from [Releases](https://github.com/sinnoken/go-deadman/releases):
 
-| Asset | Platform | Embedded targets |
-|---|---|---|
-| `go-deadman-internet-windows-amd64.zip` | Windows x64 | Global ISPs, cloud anycast, IXPs, DNS, Taiwan ISPs |
-| `go-deadman-tasks-windows-amd64.zip` | Windows x64 | LAN targets |
-| `go-deadman-internet-darwin-arm64.zip` | macOS Apple Silicon (M-series, MacBook Neo) | Global ISPs, cloud anycast, IXPs, DNS, Taiwan ISPs |
-| `go-deadman-tasks-darwin-arm64.zip` | macOS Apple Silicon (M-series, MacBook Neo) | LAN targets |
+| Asset | Platform |
+|---|---|
+| `go-deadman-windows-amd64.zip` | Windows x64 |
+| `go-deadman-darwin-arm64.zip` | macOS Apple Silicon (M-series, MacBook Neo) |
+
+Each binary contains every preset (`internet`: global ISPs, cloud anycast, IXPs, DNS, Taiwan ISPs; `tasks`: LAN targets) — pick one with `-preset`.
 
 On macOS the binary is ad-hoc signed but not notarized, so Gatekeeper blocks it after a browser download. Clear the quarantine flag once:
 
@@ -53,10 +53,14 @@ gh attestation verify go-deadman.exe --repo sinnoken/go-deadman
 ## 🚀 Usage
 
 ```bash
-go-deadman                     # use the embedded preset
-go-deadman -config my.yaml     # use an external config instead
+go-deadman                     # embedded "internet" preset
+go-deadman -preset tasks       # another embedded preset
+go-deadman -list-presets
+go-deadman -config my.yaml     # an external config instead
 go-deadman -version
 ```
+
+Without `-preset`, a binary renamed to `go-deadman-<preset>` (e.g. `go-deadman-tasks.exe`) starts with that preset, which is handy for double-clicking on Windows.
 
 | Key | Action |
 |---|---|
@@ -71,7 +75,7 @@ The list scrolls when it is taller than the terminal; the footer then shows `Row
 
 | OS | Native mode needs |
 |---|---|
-| **Windows** | Run as **Administrator** |
+| **Windows** | Nothing extra for IPv4 (uses the `IcmpSendEcho` API, timed with `QueryPerformanceCounter`); IPv6 targets need **Administrator** |
 | **Linux** | Unprivileged ICMP (`net.ipv4.ping_group_range`), enabled on most distros |
 | **macOS** | Nothing extra |
 
@@ -118,9 +122,10 @@ Probe timeout is `max(interval, 1s)` in both modes. On narrow terminals columns 
 Requires Go 1.25+.
 
 ```bash
-go build -trimpath -ldflags="-s -w" -o go-deadman ./cmd/go-deadman              # internet preset
-go build -trimpath -ldflags="-s -w" -tags tasks -o go-deadman ./cmd/go-deadman  # tasks preset
+go build -trimpath -ldflags="-s -w" -o go-deadman ./cmd/go-deadman
 ```
+
+Every `presets/*.yaml` is embedded; adding a file there adds a preset.
 
 Windows icon and version info (optional):
 
@@ -134,20 +139,20 @@ go-winres make --in winres/winres.json --out cmd/go-deadman/rsrc --product-versi
 | Path | Contents |
 |---|---|
 | `cmd/go-deadman/` | Entry point: flags, config source, program start |
-| `internal/monitor/` | Config loading/validation, ping workers (`probeTracker`, fallback), per-target statistics |
-| `internal/tui/` | Bubble Tea model, width-aware layout, rendering |
-| `presets/` | Target lists and their build-tag-selected embedding |
+| `internal/monitor/` | Config loading/validation, ping workers (`probeTracker`, Windows `IcmpSendEcho`, fallback), per-target statistics |
+| `internal/tui/` | Bubble Tea model, width-aware layout, scrolling, rendering |
+| `presets/` | Target lists, all embedded and selected at runtime |
 | `winres/` | Windows icon and version-info manifest |
 
 ### Tests and checks
 
 ```bash
-go vet ./... && go vet -tags tasks ./...
-go test ./... && go test -tags tasks ./...    # add -race where cgo is available
+go vet ./...
+go test ./...                     # add -race where cgo is available
 go test ./internal/monitor -run '^TestProbeTracker$' -count=1
 ```
 
-CI (`.github/workflows/build.yml`) runs a tidy check, gofmt, vet, race tests, a coverage gate (`internal/monitor` ≥ 80%), golangci-lint, govulncheck and gosec on every push and PR, plus `go test` on Windows and macOS runners. All actions are pinned to commit SHAs and tools to fixed versions (Dependabot proposes updates). Pushing a `v*` tag builds every preset/platform, attests the binaries and publishes a release; the tag becomes the app version and the Windows file version.
+CI (`.github/workflows/build.yml`) runs a tidy check, gofmt, vet, race tests, a coverage gate (`internal/monitor` ≥ 80%), golangci-lint, govulncheck and gosec on every push and PR, plus `go test` on Windows and macOS runners. All actions are pinned to commit SHAs and tools to fixed versions (Dependabot proposes updates). Pushing a `v*` tag builds every platform, attests the binaries and publishes a release; the tag becomes the app version and the Windows file version.
 
 The ping workers are unit-tested without network access: `newEchoSession`, `runPing` and the DNS lookups are package variables that tests replace with fakes.
 

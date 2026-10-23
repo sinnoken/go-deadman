@@ -2,13 +2,13 @@
 
 ## Build, test, and lint
 
-`go.mod` and `go.sum` are committed; no setup step is needed. The target list is
-embedded at compile time and selected by build tag:
+`go.mod` and `go.sum` are committed; no setup step is needed. Every
+`presets/*.yaml` is embedded and chosen at runtime:
 
 ```sh
-go build -trimpath -ldflags="-s -w" -o go-deadman ./cmd/go-deadman              # presets/internet.yaml
-go build -trimpath -ldflags="-s -w" -tags tasks -o go-deadman ./cmd/go-deadman  # presets/tasks.yaml
-./go-deadman -config other.yaml   # runtime override of the embedded preset
+go build -trimpath -ldflags="-s -w" -o go-deadman ./cmd/go-deadman
+./go-deadman -preset tasks        # default: internet (or go-deadman-<preset> exe name)
+./go-deadman -config other.yaml   # external file instead of a preset
 ```
 
 Validation (mirrors CI in `.github/workflows/build.yml`):
@@ -16,8 +16,8 @@ Validation (mirrors CI in `.github/workflows/build.yml`):
 ```sh
 go mod tidy -diff
 gofmt -l .
-go vet ./... && go vet -tags tasks ./...
-go test -race -count=1 ./... && go test -race -count=1 -tags tasks ./...
+go vet ./... && GOOS=windows go vet ./... && GOOS=darwin go vet ./...
+go test -race -count=1 ./...
 golangci-lint run --timeout=5m
 govulncheck ./...
 gosec ./...
@@ -25,16 +25,17 @@ gosec ./...
 
 Run a single test with `go test ./internal/monitor -run '^TestName$' -count=1`.
 
-CI builds Windows amd64 and macOS arm64 zips for both presets on `v*` tags or manual dispatch.
+CI builds one zip per platform (Windows amd64, macOS arm64) on `v*` tags or manual dispatch.
 The tag is injected via `-X main.version` and `go-winres make --in
 winres/winres.json --out cmd/go-deadman/rsrc --product-version/--file-version`;
 binaries get a build-provenance attestation.
 
 ## Architecture
 
-- `cmd/go-deadman` — flags, picks `presets.Data` or the `-config` file, calls
-  `monitor.LoadConfig`, runs `tui.New`.
-- `presets` — `internet.go` (`!tasks`) / `tasks.go` (`tasks`) embed the YAML.
+- `cmd/go-deadman` — flags (`-preset`, `-config`, `-list-presets`,
+  `-version`), `choosePreset` (flag > `go-deadman-<preset>` exe name >
+  `presets.Default`), `monitor.LoadConfig`, `cfg.Start(ctx)`, `tui.New`.
+- `presets` — embeds `*.yaml`; `Names()`, `Get(name)`, `Default`.
 - `internal/monitor`
   - `config.go` — `LoadConfig` parses, defaults and validates, marks `"---"`
     entries as separators; `Config.Start(ctx)` launches one worker per target
@@ -50,7 +51,9 @@ binaries get a build-provenance attestation.
     with backoff until it resolves), then `deviceWorker` runs `runNative`: an
     `echoSession` (pro-bing in infinite mode) whose send/receive callbacks share
     one channel into `probeTracker`, which settles each sequence number exactly
-    once (reply → success, `probeTimeout` → loss, late reply → ignored). If the
+    once (reply → success, `probeTimeout` → loss, late reply → ignored). On
+    Windows, IPv4 sessions use `IcmpSendEcho` (no admin needed, RTT timed with
+    `QueryPerformanceCounter`; `icmp_windows.go`). If the
     session can't start or stops on its own, `fallbackWorker` shells out to
     `ping` (`pingArgs` per OS) and parses output with `parseRTT`.
   - Seams for tests: `newEchoSession`, `runPing`, `lookupIP`, `lookupAddr`,
@@ -69,7 +72,7 @@ binaries get a build-provenance attestation.
   adjacent successful probes; SNT counts settled probes.
 - Measure text with `lipgloss.Width` / `truncWidth` / `fitWidth`, not `len`, so
   CJK names lay out correctly (`TestViewFitsWidth` checks widths 20–200).
-- Keep both presets on the same schema; `TestLoadConfigPresets` validates them.
+- Keep presets on the same schema; `TestLoadConfigPresets` validates every one.
 - CI pins actions to commit SHAs and tools to versions; keep `internal/monitor`
   coverage ≥ 80% (CI gate).
 - `parseRTT` must keep supporting English (`time=`/`time<`) and Chinese
