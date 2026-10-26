@@ -1,4 +1,4 @@
-scale: 10
+description: "Overview: backbone, cloud, IX, DNS and Taiwan ISPs (default)"
 interval: 1s
 jitter: 0.1
 devices:

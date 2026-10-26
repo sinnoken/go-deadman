@@ -21,6 +21,36 @@ func TestLoadConfigPresets(t *testing.T) {
 		if cfg.interval != time.Second {
 			t.Errorf("preset %s: interval = %v, want 1s", name, cfg.interval)
 		}
+		checkPresetContent(t, name, cfg)
+	}
+}
+
+// 專題 preset 的目標數上限；總覽 internet 與區網範本 tasks 不受限
+const maxThemedTargets = 16
+
+func checkPresetContent(t *testing.T, name string, cfg Config) {
+	t.Helper()
+	if cfg.Description == "" {
+		t.Errorf("preset %s: missing description", name)
+	}
+	seen := map[string]bool{}
+	targets := 0
+	for _, d := range cfg.Devices {
+		if d.IsSeparator() {
+			continue
+		}
+		targets++
+		key := d.IP + d.Host
+		if key == "" {
+			key = d.Name
+		}
+		if seen[key] {
+			t.Errorf("preset %s: duplicate target %s", name, key)
+		}
+		seen[key] = true
+	}
+	if targets == 0 || (name != presets.Default && name != "tasks" && targets > maxThemedTargets) {
+		t.Errorf("preset %s: %d targets, want 1-%d", name, targets, maxThemedTargets)
 	}
 }
 
@@ -69,5 +99,32 @@ func TestLoadConfigErrors(t *testing.T) {
 func TestLoadConfigIgnoresUnknownKeys(t *testing.T) {
 	if _, err := LoadConfig([]byte("scale: 10\ndevices: [{ip: 192.0.2.1}]")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLoadConfigHost(t *testing.T) {
+	cfg, err := LoadConfig([]byte(`
+devices:
+  - {name: "Steam store", host: " store.example.com "}
+  - {host: "only-host.example.com"}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := cfg.Devices[0]; d.Name != "Steam store" || d.Host != "store.example.com" {
+		t.Errorf("name+host = %q / %q", d.Name, d.Host)
+	}
+	if d := cfg.Devices[1]; d.Name != "only-host.example.com" {
+		t.Errorf("host-only name = %q", d.Name)
+	}
+	for _, bad := range []string{
+		`devices: [{name: x, ip: 192.0.2.1, host: x.example}]`, // ip 與 host 擇一
+		`devices: [{name: "---", host: x.example}]`,            // 分隔列不可帶目標
+		`devices: [{host: "---"}]`,                             // 分隔列不可寫在 host
+		`devices: [{name: "---", ip: 192.0.2.1}]`,
+	} {
+		if _, err := LoadConfig([]byte(bad)); err == nil {
+			t.Errorf("expected error for %s", bad)
+		}
 	}
 }

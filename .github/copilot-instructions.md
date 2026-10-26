@@ -35,10 +35,15 @@ binaries get a build-provenance attestation.
 - `cmd/go-deadman` — flags (`-preset`, `-config`, `-list-presets`,
   `-version`), `choosePreset` (flag > `go-deadman-<preset>` exe name >
   `presets.Default`), `monitor.LoadConfig`, `cfg.Start(ctx)`, `tui.New`.
-- `presets` — embeds `*.yaml`; `Names()`, `Get(name)`, `Default`.
+- `cmd/go-deadman` `writePresetList` — `-list-presets` prints name, target count
+  and `description`, aligned.
+- `presets` — embeds `*.yaml` (22 presets: `internet` overview, `tasks` LAN
+  template, 20 themed lists); `Names()`, `Get(name)`, `Default`.
 - `internal/monitor`
   - `config.go` — `LoadConfig` parses, defaults and validates, marks `"---"`
-    entries as separators; `Config.Start(ctx)` launches one worker per target
+    entries as separators. Optional top-level `description`; a device needs
+    `name`, `ip` or `host` (`host` = hostname to resolve, `name` then is only
+    the label; `ip` and `host` are mutually exclusive). `Config.Start(ctx)` launches one worker per target
     and returns a `wait` func. `main` cancels the context on quit, which stops
     pingers, `ping` child processes and DNS retries.
     Anything the renderer reads without the lock must be set here, before
@@ -47,8 +52,9 @@ binaries get a build-provenance attestation.
     recorded (loss, SNT, last RTT/`LastOK`, moving average, jitter, history).
     `Device.Snapshot` gives the renderer a consistent copy; `Updates()` signals
     data changes.
-  - `ping.go` — `runDevice` fills a missing name (reverse DNS) or IP (retrying
-    with backoff until it resolves), then `deviceWorker` runs `runNative`: an
+  - `ping.go` — `runDevice` fills a missing name (reverse DNS) or IP (resolving
+    `host`, else `name`, retrying with backoff; `preferIPv4` picks the first
+    IPv4 because Windows non-admin has a native path only for IPv4), then `deviceWorker` runs `runNative`: an
     `echoSession` (pro-bing in infinite mode) whose send/receive callbacks share
     one channel into `probeTracker`, which settles each sequence number exactly
     once (reply → success, `probeTimeout` → loss, late reply → ignored). On
@@ -72,7 +78,17 @@ binaries get a build-provenance attestation.
   adjacent successful probes; SNT counts settled probes.
 - Measure text with `lipgloss.Width` / `truncWidth` / `fitWidth`, not `len`, so
   CJK names lay out correctly (`TestViewFitsWidth` checks widths 20–200).
-- Keep presets on the same schema; `TestLoadConfigPresets` validates every one.
+- Keep presets on the same schema; `TestLoadConfigPresets` validates every one
+  and `checkPresetContent` requires a `description`, no duplicate targets and
+  1–16 targets per themed preset (`internet` and `tasks` exempt).
+- Preset targets: add one only after pinging it from the maintainer's network
+  with 3 of 3 replies (GitHub runners block ICMP, so CI cannot check
+  reachability); drop targets that rate-limit ICMP. Prefer `ip` for
+  infrastructure, `name` + `host` for services. Each YAML starts with a Chinese
+  comment, a verification-date comment and `description:`; update the README
+  "Presets" table when adding or removing one.
+- To monitor IPv6, write the IPv6 address in `ip`; hostnames resolve to IPv4
+  first.
 - CI pins actions to commit SHAs and tools to versions; keep `internal/monitor`
   coverage ≥ 80% (CI gate).
 - `parseRTT` must keep supporting English (`time=`/`time<`) and Chinese

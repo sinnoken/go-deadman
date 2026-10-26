@@ -24,12 +24,22 @@ go test ./internal/monitor -run '^TestName$' -count=1
 
 - 結構：`cmd/go-deadman`（進入點）、`internal/monitor`（設定、worker、統計）、`internal/tui`（畫面）、`presets`（內嵌所有 YAML，執行時以 `-preset` 選擇；執行檔名為 `go-deadman-<preset>` 時自動選該 preset）。
 - Windows 的 IPv4 native 走 `icmp_windows.go` 的 `IcmpSendEcho`（不需系統管理員），RTT 用 `QueryPerformanceCounter` 計時，因為 Windows 上 `time.Now` 的解析度不足以量 loopback／區網。這段只有在 Windows 上才會編譯與測試（本機與 CI 的 windows-latest）。
+- 設定：頂層可選 `description`（`-list-presets` 顯示「名稱、目標數、說明」）；device 可寫 `name`、`ip`、`host` 任一，`host` 是要解析的主機名稱（此時 `name` 只當顯示名稱），與 `ip` 擇一；只寫 `name` 時解析 `name`，只寫 `ip` 時以反解補名稱。
+- 名稱解析經 `ping.go` 的 `preferIPv4` 優先取 IPv4，因為 Windows 一般權限只有 IPv4 有 native 路徑；要測 IPv6 必須在 `ip` 直接寫 IPv6 位址（見 `ipv6` preset）。
 - `LoadConfig` 負責驗證與標記分隔列。`isSep` 在 worker 啟動前設定、之後唯讀，所以 `IsSeparator()` 不需加鎖；其他 Device 欄位一律經 `mu` 存取，畫面透過 `Snapshot()` 讀取。
 - 兩條 ping 路徑的結果都只能經 `Device.UpdateStats` 寫入。native 路徑以 `probeTracker` 讓每個序號只結算一次；`OnSend` 與 `OnRecv` 共用同一個 channel，以保證處理順序。
 - worker 的生命週期由 `main` 控制：`cfg.Start(ctx)` 啟動，結束時 cancel 並等待（最多 2 秒）。新增任何會等待或阻塞的程式碼，都要能被 ctx 中斷（用 `sleepCtx`、`CommandContext`、`DefaultResolver` 的 ctx 版本）。
 - 測試替換點：`newEchoSession`、`runPing`、`lookupIP`、`lookupAddr`、`dnsRetryMin/Max`。替換後必須在 cleanup 時先停掉 worker 再還原（`worker_test.go` 的 `goWorker`），否則 CI 的 `-race` 會抓到。`internal/monitor` 覆蓋率要維持 ≥ 80%（CI 有門檻）。
 - 重繪是按需觸發：`signalUpdate()` → `monitor.Updates()` → tui 的 `dataMsg`，再以 `renderFPS` 節流。新增會改變畫面的狀態時，記得呼叫 `signalUpdate()`。
 - 列數超過 `height - chromeRows` 時以 `offset` 捲動；欄寬由 `computeLayout` 依優先順序分配；文字寬度一律用 `lipgloss.Width`／`truncWidth`／`fitWidth` 計算（CJK 佔 2 格）。
+
+## Preset 規則
+
+- 新增目標前必須從使用者的網路實際 ping 過，3 次全部回應才可加入；會限制 ICMP 速率（時有時無）的目標一律不收。GitHub runner 擋 ICMP，CI 無法檢查可達性，只能靠人工驗證。
+- 基礎設施類目標（DNS、骨幹、IX、根伺服器等）優先寫 `ip`；服務類目標（SaaS、遊戲、串流等）用 `name` + `host`，讓 DNS 解析到最近的節點。
+- 專題 preset 每份 1–16 個目標，總覽 `internet` 與區網範本 `tasks` 除外；由 `internal/monitor/config_test.go` 的 `checkPresetContent` 檢查（也會擋缺 `description` 與重複目標）。
+- 每份 YAML 開頭要有中文說明註解、驗證日期註解（例如 `# 驗證：2026-10-26，自台灣 HiNet ……`），以及 `description:`。
+- 新增或刪除 preset 時，同步更新 README 的「Presets」表格。
 
 ## 指標定義
 

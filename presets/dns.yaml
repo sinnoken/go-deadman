@@ -1,0 +1,43 @@
+# 公共遞迴 DNS
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Public recursive DNS resolvers"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Global anycast ---
+  - name: "Google"
+    ip: "8.8.8.8"
+  - name: "Google-2"
+    ip: "8.8.4.4"
+  - name: "Cloudflare"
+    ip: "1.1.1.1"
+  - name: "Cloudflare-2"
+    ip: "1.0.0.1"
+  - name: "Quad9"
+    ip: "9.9.9.9"
+  - name: "Quad9-2"
+    ip: "149.112.112.112"
+  - name: "OpenDNS"
+    ip: "208.67.222.222"
+  - name: "OpenDNS-2"
+    ip: "208.67.220.220"
+  - name: "---"
+  # --- Filtering and privacy ---
+  - name: "AdGuard"
+    ip: "94.140.14.14"
+  - name: "Control D"
+    ip: "76.76.2.0"
+  - name: "NextDNS"
+    ip: "45.90.28.0"
+  - name: "CleanBrowsing"
+    ip: "185.228.168.9"
+  - name: "Mullvad"
+    ip: "194.242.2.2"
+  - name: "DNS.SB"
+    ip: "185.222.222.222"
+  - name: "---"
+  # --- Taiwan ---
+  - name: "HiNet"
+    ip: "168.95.1.1"
+  - name: "TWNIC Quad101"
+    ip: "101.101.101.101"

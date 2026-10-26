@@ -1,0 +1,33 @@
+# 網際網路交換中心業者（量測其網站入口，不是交換網段）
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Internet exchange operators (their web front-ends, not peering LANs)"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Europe ---
+  - name: "AMS-IX"
+    host: "www.ams-ix.net"
+  - name: "DE-CIX"
+    host: "www.de-cix.net"
+  - name: "LINX"
+    host: "www.linx.net"
+  - name: "---"
+  # --- Asia-Pacific ---
+  - name: "TPIX Taipei"
+    host: "www.tpix.net.tw"
+  - name: "HKIX (CUHK)"
+    ip: "137.189.6.21"
+  - name: "JPNAP"
+    host: "www.jpnap.net"
+  - name: "BBIX"
+    host: "www.bbix.net"
+  - name: "SGIX"
+    host: "www.sgix.sg"
+  - name: "---"
+  # --- Global ---
+  - name: "Equinix"
+    host: "www.equinix.com"
+  - name: "PCH"
+    host: "www.pch.net"
+  - name: "PeeringDB"
+    host: "www.peeringdb.com"

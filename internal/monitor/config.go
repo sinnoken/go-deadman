@@ -2,6 +2,7 @@
 package monitor
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -21,9 +22,10 @@ const (
 )
 
 type Config struct {
-	Interval string    `yaml:"interval"`
-	Jitter   float64   `yaml:"jitter"`
-	Devices  []*Device `yaml:"devices"`
+	Description string    `yaml:"description"` // 選填；-list-presets 顯示用
+	Interval    string    `yaml:"interval"`
+	Jitter      float64   `yaml:"jitter"`
+	Devices     []*Device `yaml:"devices"`
 
 	interval time.Duration // 由 Interval 解析而來，經 LoadConfig 驗證
 }
@@ -64,12 +66,22 @@ func LoadConfig(data []byte) (Config, error) {
 		}
 		d.Name = strings.TrimSpace(d.Name)
 		d.IP = strings.TrimSpace(d.IP)
-		if d.Name == separatorName {
+		d.Host = strings.TrimSpace(d.Host)
+		if d.Name == separatorName || d.Host == separatorName {
+			if d.IP != "" || d.Host != "" {
+				return cfg, fmt.Errorf("第 %d 個 device 是分隔列（%q），不可再帶 ip 或 host", i+1, separatorName)
+			}
 			d.isSep = true
 			continue
 		}
-		if d.Name == "" && d.IP == "" {
-			return cfg, fmt.Errorf("第 %d 個 device 需要 name 或 ip", i+1)
+		if d.Name == "" && d.IP == "" && d.Host == "" {
+			return cfg, fmt.Errorf("第 %d 個 device 需要 name、ip 或 host", i+1)
+		}
+		if d.IP != "" && d.Host != "" {
+			return cfg, fmt.Errorf("第 %d 個 device（%s）的 ip 與 host 只能擇一", i+1, cmp.Or(d.Name, d.Host))
+		}
+		if d.Name == "" {
+			d.Name = d.Host
 		}
 		if d.IP != "" && net.ParseIP(d.IP) == nil {
 			return cfg, fmt.Errorf("第 %d 個 device（%s）的 ip %q 不是合法 IP", i+1, d.Name, d.IP)

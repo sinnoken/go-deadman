@@ -1,0 +1,27 @@
+# 台灣 ISP（量測其公共 DNS）
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Taiwan ISPs (their public DNS servers)"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Chunghwa Telecom HiNet ---
+  - name: "HiNet"
+    ip: "168.95.1.1"
+  - name: "HiNet-2"
+    ip: "168.95.192.1"
+  - name: "---"
+  # --- Other ISPs ---
+  - name: "Seednet FET"
+    ip: "139.175.1.1"
+  - name: "Seednet FET-2"
+    ip: "139.175.55.244"
+  - name: "Taiwan Mobile"
+    ip: "61.31.233.1"
+  - name: "Kbro"
+    ip: "203.79.224.30"
+  - name: "So-net"
+    ip: "61.64.127.2"
+  - name: "APTG"
+    ip: "210.200.211.225"
+  - name: "Vee-Time"
+    ip: "210.59.1.1"

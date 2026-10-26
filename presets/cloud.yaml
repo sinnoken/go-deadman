@@ -1,0 +1,31 @@
+# 公有雲入口與亞太區域
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Public cloud entry points and Asia-Pacific regions"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Global edge ---
+  - name: "AWS Global Accelerator"
+    ip: "15.197.142.173"
+  - name: "Google Cloud Storage"
+    host: "storage.googleapis.com"
+  - name: "Microsoft Azure edge"
+    ip: "204.79.197.200"
+  - name: "---"
+  # --- AWS regions ---
+  - name: "AWS S3 Taipei"
+    host: "s3.ap-east-2.amazonaws.com"
+  - name: "AWS S3 Tokyo"
+    host: "s3.ap-northeast-1.amazonaws.com"
+  - name: "---"
+  # --- Alibaba and Tencent ---
+  - name: "Alibaba Hong Kong"
+    host: "oss-cn-hongkong.aliyuncs.com"
+  - name: "Alibaba Singapore"
+    host: "oss-ap-southeast-1.aliyuncs.com"
+  - name: "Alibaba Tokyo"
+    host: "oss-ap-northeast-1.aliyuncs.com"
+  - name: "Tencent Hong Kong"
+    host: "cos.ap-hongkong.myqcloud.com"
+  - name: "Tencent Singapore"
+    host: "cos.ap-singapore.myqcloud.com"

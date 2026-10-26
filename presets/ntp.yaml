@@ -1,0 +1,29 @@
+# 公共 NTP 時間伺服器
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Public NTP time servers"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Providers ---
+  - name: "Google"
+    host: "time.google.com"
+  - name: "Cloudflare"
+    host: "time.cloudflare.com"
+  - name: "Microsoft"
+    host: "time.windows.com"
+  - name: "Meta"
+    host: "time.facebook.com"
+  - name: "---"
+  # --- National time labs ---
+  - name: "TW NSTL"
+    host: "tick.stdtime.gov.tw"
+  - name: "JP NICT"
+    host: "ntp.nict.jp"
+  - name: "US NIST"
+    host: "time.nist.gov"
+  - name: "---"
+  # --- NTP pool ---
+  - name: "pool.ntp.org"
+    host: "pool.ntp.org"
+  - name: "tw.pool.ntp.org"
+    host: "tw.pool.ntp.org"

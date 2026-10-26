@@ -1,0 +1,29 @@
+# IPv6 連線（Windows 上要以系統管理員執行才會走 native）
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv6 ping 3 次全數回應
+description: "IPv6 reachability (on Windows these need Administrator for native mode)"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Public DNS ---
+  - name: "Google DNS"
+    ip: "2001:4860:4860::8888"
+  - name: "Cloudflare"
+    ip: "2606:4700:4700::1111"
+  - name: "Cloudflare-2"
+    ip: "2606:4700:4700::1001"
+  - name: "Quad9"
+    ip: "2620:fe::fe"
+  - name: "OpenDNS"
+    ip: "2620:119:35::35"
+  - name: "AdGuard"
+    ip: "2a10:50c0::ad1:ff"
+  - name: "---"
+  # --- Taiwan ---
+  - name: "HiNet"
+    ip: "2001:b000:168::1"
+  - name: "TWNIC Quad101"
+    ip: "2001:de4::101"
+  - name: "---"
+  # --- Root DNS ---
+  - name: "k.root RIPE NCC"
+    ip: "2001:7fd::1"

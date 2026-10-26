@@ -1,0 +1,41 @@
+# 社群網路與通訊軟體
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Social networks and messaging"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Meta ---
+  - name: "Facebook"
+    host: "www.facebook.com"
+  - name: "Instagram"
+    host: "www.instagram.com"
+  - name: "Threads"
+    host: "www.threads.net"
+  - name: "WhatsApp"
+    host: "web.whatsapp.com"
+  - name: "Messenger"
+    host: "www.messenger.com"
+  - name: "---"
+  # --- Global ---
+  - name: "X"
+    host: "x.com"
+  - name: "LINE CDN"
+    host: "obs.line-scdn.net"
+  - name: "Discord"
+    host: "discord.com"
+  - name: "Reddit"
+    host: "www.reddit.com"
+  - name: "LinkedIn"
+    host: "www.linkedin.com"
+  - name: "TikTok"
+    host: "www.tiktok.com"
+  - name: "Pinterest"
+    host: "www.pinterest.com"
+  - name: "Wikipedia"
+    host: "www.wikipedia.org"
+  - name: "---"
+  # --- Taiwan ---
+  - name: "PTT"
+    host: "www.ptt.cc"
+  - name: "Dcard"
+    host: "www.dcard.tw"

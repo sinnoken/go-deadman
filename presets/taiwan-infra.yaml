@@ -1,0 +1,29 @@
+# 台灣網路基礎建設與公共服務
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Taiwan Internet infrastructure and public services"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- TWNIC ---
+  - name: "TWNIC Quad101"
+    ip: "101.101.101.101"
+  - name: "TWNIC Quad101-2"
+    ip: "101.102.103.104"
+  - name: "TWNIC"
+    host: "www.twnic.tw"
+  - name: "---"
+  # --- Academic network ---
+  - name: "TANet NTU DNS"
+    ip: "140.112.254.4"
+  - name: "NCHC"
+    host: "www.nchc.org.tw"
+  - name: "Academia Sinica"
+    host: "www.sinica.edu.tw"
+  - name: "---"
+  # --- Cloud and government ---
+  - name: "CHT hicloud"
+    host: "hicloud.hinet.net"
+  - name: "gov.tw"
+    host: "www.gov.tw"
+  - name: "NCC"
+    host: "www.ncc.gov.tw"

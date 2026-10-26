@@ -1,0 +1,31 @@
+# DNS 根伺服器 12 組（13 組中的 g-root 不回 ICMP，未列入）
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "DNS root servers a-m (g-root drops ICMP)"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Root servers ---
+  - name: "a.root Verisign"
+    ip: "198.41.0.4"
+  - name: "b.root USC-ISI"
+    ip: "170.247.170.2"
+  - name: "c.root Cogent"
+    ip: "192.33.4.12"
+  - name: "d.root UMD"
+    ip: "199.7.91.13"
+  - name: "e.root NASA"
+    ip: "192.203.230.10"
+  - name: "f.root ISC"
+    ip: "192.5.5.241"
+  - name: "h.root US Army"
+    ip: "198.97.190.53"
+  - name: "i.root Netnod"
+    ip: "192.36.148.17"
+  - name: "j.root Verisign"
+    ip: "192.58.128.30"
+  - name: "k.root RIPE NCC"
+    ip: "193.0.14.129"
+  - name: "l.root ICANN"
+    ip: "199.7.83.42"
+  - name: "m.root WIDE"
+    ip: "202.12.27.33"

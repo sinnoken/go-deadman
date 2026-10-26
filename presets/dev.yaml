@@ -1,0 +1,43 @@
+# 開發者服務與套件庫
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Developer services and package registries"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Code hosting ---
+  - name: "GitHub"
+    host: "github.com"
+  - name: "GitHub API"
+    host: "api.github.com"
+  - name: "GitHub raw"
+    host: "raw.githubusercontent.com"
+  - name: "GitLab"
+    host: "gitlab.com"
+  - name: "Hugging Face"
+    host: "huggingface.co"
+  - name: "---"
+  # --- Package registries ---
+  - name: "npm"
+    host: "registry.npmjs.org"
+  - name: "PyPI"
+    host: "pypi.org"
+  - name: "PyPI files"
+    host: "files.pythonhosted.org"
+  - name: "Go proxy"
+    host: "proxy.golang.org"
+  - name: "crates.io"
+    host: "crates.io"
+  - name: "Maven Central"
+    host: "repo1.maven.org"
+  - name: "---"
+  # --- Containers and OS mirrors ---
+  - name: "Docker Hub"
+    host: "hub.docker.com"
+  - name: "Microsoft MCR"
+    host: "mcr.microsoft.com"
+  - name: "Ubuntu archive"
+    host: "archive.ubuntu.com"
+  - name: "Ubuntu TW mirror"
+    host: "tw.archive.ubuntu.com"
+  - name: "Debian"
+    host: "deb.debian.org"

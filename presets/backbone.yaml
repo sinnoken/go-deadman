@@ -1,0 +1,31 @@
+# Tier-1 與主要國際骨幹業者
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Tier-1 and major international backbone carriers"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Tier-1 ---
+  - name: "Lumen AS3356"
+    ip: "4.2.2.1"
+  - name: "NTT AS2914"
+    ip: "129.250.35.250"
+  - name: "Arelion AS1299"
+    ip: "62.115.146.197"
+  - name: "GTT AS3257"
+    ip: "213.200.64.94"
+  - name: "Cogent AS174"
+    ip: "66.28.0.45"
+  - name: "Verizon AS701"
+    ip: "198.6.1.1"
+  - name: "Tata AS6453"
+    ip: "66.198.161.16"
+  - name: "Deutsche Telekom AS3320"
+    ip: "194.25.0.60"
+  - name: "---"
+  # --- Other major carriers ---
+  - name: "Hurricane Electric AS6939"
+    ip: "74.82.42.42"
+  - name: "Telstra"
+    ip: "139.130.4.4"
+  - name: "Liberty Global AS6830"
+    ip: "84.116.62.160"

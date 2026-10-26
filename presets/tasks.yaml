@@ -1,4 +1,4 @@
-scale: 10
+description: "LAN template: public DNS, home gateway and 192.168.77.x hosts"
 interval: 1s
 devices:
   - name: "Google-DNS"

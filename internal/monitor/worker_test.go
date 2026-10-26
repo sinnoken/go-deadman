@@ -302,3 +302,39 @@ func TestNewProBingSessionRejectsBadAddress(t *testing.T) {
 		t.Error("expected error for unresolvable address")
 	}
 }
+
+func TestPreferIPv4(t *testing.T) {
+	v6, v4 := net.ParseIP("2001:db8::1"), net.ParseIP("192.0.2.1")
+	if got := preferIPv4([]net.IP{v6, v4}); !got.Equal(v4) {
+		t.Errorf("mixed result should pick IPv4, got %v", got)
+	}
+	if got := preferIPv4([]net.IP{v6}); !got.Equal(v6) {
+		t.Errorf("IPv6-only result should keep IPv6, got %v", got)
+	}
+}
+
+func TestHostResolvedKeepsDisplayName(t *testing.T) {
+	orig := lookupIP
+	t.Cleanup(func() { lookupIP = orig })
+	var mu sync.Mutex
+	var asked string
+	lookupIP = func(_ context.Context, host string) ([]net.IP, error) {
+		mu.Lock()
+		asked = host
+		mu.Unlock()
+		return []net.IP{net.ParseIP("192.0.2.7")}, nil
+	}
+	useFakeSession(t, nil, nil)
+
+	d := &Device{Name: "Steam store", Host: "store.example.com"}
+	goWorker(t, func(ctx context.Context) { runDevice(ctx, d, testInterval, 0.1) })
+	waitFor(t, d, time.Second, func(d *Device) bool { return d.IP == "192.0.2.7" })
+	d.mu.RLock()
+	name := d.Name
+	d.mu.RUnlock()
+	mu.Lock()
+	defer mu.Unlock()
+	if asked != "store.example.com" || name != "Steam store" {
+		t.Errorf("resolved %q, display name %q", asked, name)
+	}
+}

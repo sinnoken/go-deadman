@@ -1,0 +1,33 @@
+# CDN 業者（量測離你最近的節點）
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "CDN providers (nearest edge as resolved from your network)"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- CDN providers ---
+  - name: "Cloudflare"
+    host: "www.cloudflare.com"
+  - name: "Fastly"
+    ip: "151.101.1.57"
+  - name: "Akamai"
+    host: "a248.e.akamai.net"
+  - name: "Amazon CloudFront"
+    host: "d1.awsstatic.com"
+  - name: "Google gstatic"
+    host: "www.gstatic.com"
+  - name: "Microsoft Azure CDN"
+    host: "ajax.aspnetcdn.com"
+  - name: "BunnyCDN"
+    host: "bunny.net"
+  - name: "Gcore"
+    host: "gcore.com"
+  - name: "CDNetworks"
+    host: "www.cdnetworks.com"
+  - name: "---"
+  # --- Open-source CDNs ---
+  - name: "jsDelivr"
+    host: "cdn.jsdelivr.net"
+  - name: "cdnjs"
+    host: "cdnjs.cloudflare.com"
+  - name: "unpkg"
+    host: "unpkg.com"

@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +21,7 @@ import (
 )
 
 // version 於 CI 建置時以 -ldflags "-X main.version=..." 覆寫為 tag 名稱
-var version = "v1.15.0"
+var version = "v1.16.0"
 
 // presetFromExe 讓改名為 go-deadman-<preset>(.exe) 的執行檔預設使用該 preset，
 // 方便在 Windows 上直接雙擊執行不同清單
@@ -45,6 +46,35 @@ func choosePreset(flagValue, exe string) string {
 	return presets.Default
 }
 
+// writePresetList 輸出「名稱  目標數  說明」，名稱欄依最長名稱對齊
+func writePresetList(w io.Writer) error {
+	names := presets.Names()
+	width := 0
+	for _, n := range names {
+		width = max(width, len(n))
+	}
+	for _, n := range names {
+		data, err := presets.Get(n)
+		if err != nil {
+			return err
+		}
+		cfg, err := monitor.LoadConfig(data)
+		if err != nil {
+			return fmt.Errorf("preset %s: %w", n, err)
+		}
+		targets := 0
+		for _, d := range cfg.Devices {
+			if !d.IsSeparator() {
+				targets++
+			}
+		}
+		if _, err := fmt.Fprintf(w, "%-*s %3d  %s\n", width, n, targets, cfg.Description); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func main() {
 	presetFlag := flag.String("preset", "", "內嵌 preset 名稱（"+strings.Join(presets.Names(), ", ")+"）；預設 "+presets.Default)
 	configPath := flag.String("config", "", "外部 YAML 設定檔路徑；指定時忽略 -preset")
@@ -57,8 +87,9 @@ func main() {
 		fmt.Printf("go-deadman %s\n", version)
 		return
 	case *listPresets:
-		for _, n := range presets.Names() {
-			fmt.Println(n)
+		if err := writePresetList(os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
 		}
 		return
 	}

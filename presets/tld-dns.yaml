@@ -1,0 +1,43 @@
+# 主要頂級網域的權威 DNS
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Authoritative name servers of major TLDs"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Generic TLDs ---
+  - name: ".com/.net a.gtld"
+    ip: "192.5.6.30"
+  - name: ".com/.net b.gtld"
+    ip: "192.33.14.30"
+  - name: ".org a0"
+    ip: "199.19.56.1"
+  - name: ".org b0"
+    ip: "199.19.54.1"
+  - name: ".info a0"
+    ip: "199.254.31.1"
+  - name: ".asia a0"
+    ip: "199.19.55.1"
+  - name: "---"
+  # --- Asia-Pacific ccTLDs ---
+  - name: ".tw a.dns.tw"
+    ip: "203.73.24.25"
+  - name: ".tw b.dns.tw"
+    ip: "210.201.138.58"
+  - name: ".tw c.dns.tw"
+    ip: "203.66.87.201"
+  - name: ".jp a.dns.jp"
+    ip: "203.119.1.1"
+  - name: ".jp b.dns.jp"
+    ip: "202.12.30.131"
+  - name: ".cn a.dns.cn"
+    ip: "203.119.25.1"
+  - name: ".au a.au"
+    ip: "58.65.254.1"
+  - name: "---"
+  # --- Other ccTLDs ---
+  - name: ".uk dns1.nic.uk"
+    ip: "213.248.216.1"
+  - name: ".nl ns1.dns.nl"
+    ip: "194.0.28.53"
+  - name: ".us a.cctld.us"
+    ip: "156.154.124.70"

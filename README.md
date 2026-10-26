@@ -18,8 +18,8 @@ Inspired by [upa/deadman](https://github.com/upa/deadman).
 - **Socket-reuse ping engine** (`pro-bing`, infinite-send mode) — every probe tracked by sequence number
 - **Metrics** — loss %, last RTT, moving-average RTT, jitter, settled probe count, sparkline history
 - **Fallback** to the OS `ping` command when raw ICMP is unavailable
-- **DNS resolution** — give only a hostname or only an IP
-- **Embedded presets** chosen at runtime (`-preset`), or an external `-config` file
+- **DNS resolution** — give a hostname, an IP, or a display name plus `host`; hostnames prefer IPv4
+- **22 embedded presets** (DNS, cloud, CDN, backbone, gaming, streaming, …) chosen at runtime (`-preset`), or an external `-config` file
 - **Redraws only when data changes** (max 20 fps)
 
 ---
@@ -33,7 +33,7 @@ Grab a zip from [Releases](https://github.com/sinnoken/go-deadman/releases):
 | `go-deadman-windows-amd64.zip` | Windows x64 |
 | `go-deadman-darwin-arm64.zip` | macOS Apple Silicon (M-series, MacBook Neo) |
 
-Each binary contains every preset (`internet`: global ISPs, cloud anycast, IXPs, DNS, Taiwan ISPs; `tasks`: LAN targets) — pick one with `-preset`.
+Each binary contains every [preset](#-presets) — pick one with `-preset`.
 
 On macOS the binary is ad-hoc signed but not notarized, so Gatekeeper blocks it after a browser download. Clear the quarantine flag once:
 
@@ -55,7 +55,7 @@ gh attestation verify go-deadman.exe --repo sinnoken/go-deadman
 ```bash
 go-deadman                     # embedded "internet" preset
 go-deadman -preset tasks       # another embedded preset
-go-deadman -list-presets
+go-deadman -list-presets       # name, target count, description
 go-deadman -config my.yaml     # an external config instead
 go-deadman -version
 ```
@@ -83,11 +83,62 @@ Without it, each target **falls back** to the OS `ping` command automatically. N
 
 ---
 
+## 🗺️ Presets
+
+Every binary embeds all of these. `internet` is the default overview and `tasks` is a template for your own LAN; the rest are themed lists of at most 16 targets.
+
+| Preset | Monitors | Targets |
+|---|---|---:|
+| `internet` | Overview: backbone, cloud, IX, DNS and Taiwan ISPs (default) | 31 |
+| `tasks` | LAN template: public DNS, home gateway and 192.168.77.x hosts | 28 |
+| `asia-pacific` | Major Asia-Pacific carriers (their public DNS / core hosts) | 11 |
+| `backbone` | Tier-1 and major international backbone carriers | 11 |
+| `cdn` | CDN providers (nearest edge as resolved from your network) | 12 |
+| `china` | Mainland China carriers, DNS and major sites | 12 |
+| `cloud` | Public cloud entry points and Asia-Pacific regions | 10 |
+| `continents` | Latency map across continents (Vultr ping endpoints) | 16 |
+| `dev` | Developer services and package registries | 16 |
+| `dns` | Public recursive DNS resolvers | 16 |
+| `gaming` | Game platforms and stores | 12 |
+| `ipv6` | IPv6 reachability (on Windows these need Administrator for native mode) | 9 |
+| `ix` | Internet exchange operators (their web front-ends, not peering LANs) | 11 |
+| `ntp` | Public NTP time servers | 9 |
+| `root-dns` | DNS root servers a-m (g-root drops ICMP) | 12 |
+| `saas` | Office SaaS and AI services | 14 |
+| `social` | Social networks and messaging | 15 |
+| `streaming` | Video and music streaming services | 11 |
+| `taiwan` | Taiwan ISPs (their public DNS servers) | 9 |
+| `taiwan-infra` | Taiwan Internet infrastructure and public services | 9 |
+| `tld-dns` | Authoritative name servers of major TLDs | 16 |
+| `transpacific` | Trans-Pacific path: East Asia, Pacific and US West (Vultr ping endpoints) | 9 |
+
+Choose one in any of three ways:
+
+```bash
+go-deadman -preset dns          # flag
+go-deadman-gaming.exe           # binary renamed to go-deadman-<preset> (used when -preset is absent)
+go-deadman -list-presets        # see what is available
+```
+
+```text
+$ go-deadman -list-presets
+asia-pacific  12  Major Asia-Pacific carriers (their public DNS / core hosts)
+backbone      11  Tier-1 and major international backbone carriers
+cdn           12  CDN providers (nearest edge as resolved from your network)
+...
+transpacific   9  Trans-Pacific path: East Asia, Pacific and US West (Vultr ping endpoints)
+```
+
+**What these numbers mean.** A reply to ICMP echo shows the network path to that address is up; it does not prove the service behind it works. Many service targets (some SaaS, game and streaming entries in particular) resolve to a CDN edge near you, so you are measuring that edge, not the origin. Services that block or rate-limit ICMP were left out. Every target was checked from Taiwan (each YAML records the date); results from other networks may differ.
+
+---
+
 ## ⚙️ Configuration
 
 Presets live in [`presets/`](presets/) and share one schema:
 
 ```yaml
+description: "My targets"   # optional, shown by -list-presets
 interval: 1s       # probe interval, Go duration, >= 100ms (default 1s)
 jitter: 0.1        # ±10% random spacing in fallback mode, 0 < jitter < 1 (default 0.1)
 devices:
@@ -96,9 +147,13 @@ devices:
   - name: "---"          # separator row
   - name: "nas.lan"      # name only → IP resolved via DNS
   - ip: "192.168.1.1"    # IP only → name via reverse DNS
+  - name: "Steam store"  # display name + hostname to resolve
+    host: "store.steampowered.com"
 ```
 
-The file is validated at startup (interval, jitter range, each device has a name or a valid IP). Invalid files exit with a message; unknown keys are ignored.
+A device needs at least one of `name`, `ip` or `host`; `ip` and `host` are mutually exclusive. When a hostname resolves to several addresses, the first **IPv4** address is used, because Windows has a non-admin native path only for IPv4. To monitor IPv6, write the IPv6 address in `ip` (as the `ipv6` preset does).
+
+The file is validated at startup (interval, jitter range, each device has a name, host or valid IP). Invalid files exit with a message; unknown keys are ignored.
 
 ---
 
@@ -125,12 +180,12 @@ Requires Go 1.25+.
 go build -trimpath -ldflags="-s -w" -o go-deadman ./cmd/go-deadman
 ```
 
-Every `presets/*.yaml` is embedded; adding a file there adds a preset.
+Every `presets/*.yaml` is embedded; adding a file there adds a preset. Each needs a `description:`, and `TestLoadConfigPresets` rejects duplicate targets and themed presets with more than 16 targets.
 
 Windows icon and version info (optional):
 
 ```bash
-go install github.com/tc-hib/go-winres@latest
+go install github.com/tc-hib/go-winres@v0.3.3
 go-winres make --in winres/winres.json --out cmd/go-deadman/rsrc --product-version 1.2.3 --file-version 1.2.3
 ```
 
@@ -141,7 +196,7 @@ go-winres make --in winres/winres.json --out cmd/go-deadman/rsrc --product-versi
 | `cmd/go-deadman/` | Entry point: flags, config source, program start |
 | `internal/monitor/` | Config loading/validation, ping workers (`probeTracker`, Windows `IcmpSendEcho`, fallback), per-target statistics |
 | `internal/tui/` | Bubble Tea model, width-aware layout, scrolling, rendering |
-| `presets/` | Target lists, all embedded and selected at runtime |
+| `presets/` | Target lists (`*.yaml`), all embedded and selected at runtime |
 | `winres/` | Windows icon and version-info manifest |
 
 ### Tests and checks

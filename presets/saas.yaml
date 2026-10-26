@@ -1,0 +1,41 @@
+# 辦公 SaaS 與 AI 服務
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Office SaaS and AI services"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Microsoft ---
+  - name: "Microsoft 365 Outlook"
+    host: "outlook.office365.com"
+  - name: "Microsoft Teams"
+    host: "teams.microsoft.com"
+  - name: "Microsoft Entra login"
+    host: "login.microsoftonline.com"
+  - name: "---"
+  # --- Google ---
+  - name: "Google Search"
+    host: "www.google.com"
+  - name: "Gmail"
+    host: "mail.google.com"
+  - name: "Google Meet"
+    host: "meet.google.com"
+  - name: "Google Drive"
+    host: "drive.google.com"
+  - name: "---"
+  # --- Meetings and collaboration ---
+  - name: "Zoom"
+    host: "zoom.us"
+  - name: "Webex"
+    host: "www.webex.com"
+  - name: "Notion"
+    host: "www.notion.so"
+  - name: "Dropbox"
+    host: "www.dropbox.com"
+  - name: "Atlassian"
+    host: "www.atlassian.com"
+  - name: "---"
+  # --- AI ---
+  - name: "ChatGPT"
+    host: "chatgpt.com"
+  - name: "Claude"
+    host: "claude.ai"

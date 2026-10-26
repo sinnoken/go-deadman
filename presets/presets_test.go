@@ -7,7 +7,8 @@ import (
 
 func TestNamesAndGet(t *testing.T) {
 	names := Names()
-	if !slices.Equal(names, []string{"internet", "tasks"}) {
+	if !slices.IsSorted(names) || !slices.Contains(names, "internet") || !slices.Contains(names, "tasks") ||
+		!slices.Contains(names, "dns") || len(names) < 20 {
 		t.Fatalf("Names() = %v", names)
 	}
 	if !slices.Contains(names, Default) {

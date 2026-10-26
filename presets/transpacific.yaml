@@ -1,0 +1,29 @@
+# 跨太平洋路徑：東亞、太平洋、美西（Vultr 測速端點）
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Trans-Pacific path: East Asia, Pacific and US West (Vultr ping endpoints)"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- East Asia ---
+  - name: "Tokyo"
+    host: "hnd-jp-ping.vultr.com"
+  - name: "Osaka"
+    host: "osk-jp-ping.vultr.com"
+  - name: "Seoul"
+    host: "sel-kor-ping.vultr.com"
+  - name: "Singapore"
+    host: "sgp-ping.vultr.com"
+  - name: "---"
+  # --- Pacific ---
+  - name: "Honolulu"
+    host: "hon-hi-us-ping.vultr.com"
+  - name: "Sydney"
+    host: "syd-au-ping.vultr.com"
+  - name: "---"
+  # --- US West ---
+  - name: "Seattle"
+    host: "wa-us-ping.vultr.com"
+  - name: "Silicon Valley"
+    host: "sjo-ca-us-ping.vultr.com"
+  - name: "Los Angeles"
+    host: "lax-ca-us-ping.vultr.com"

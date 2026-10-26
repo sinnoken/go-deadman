@@ -1,0 +1,45 @@
+# 各洲延遲地圖（Vultr 測速端點）
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Latency map across continents (Vultr ping endpoints)"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- North America ---
+  - name: "New Jersey"
+    host: "nj-us-ping.vultr.com"
+  - name: "Chicago"
+    host: "il-us-ping.vultr.com"
+  - name: "Dallas"
+    host: "tx-us-ping.vultr.com"
+  - name: "Toronto"
+    host: "tor-ca-ping.vultr.com"
+  - name: "Mexico City"
+    host: "mex-mx-ping.vultr.com"
+  - name: "---"
+  # --- South America ---
+  - name: "Sao Paulo"
+    host: "sao-br-ping.vultr.com"
+  - name: "Santiago"
+    host: "scl-cl-ping.vultr.com"
+  - name: "---"
+  # --- Europe ---
+  - name: "London"
+    host: "lon-gb-ping.vultr.com"
+  - name: "Frankfurt"
+    host: "fra-de-ping.vultr.com"
+  - name: "Amsterdam"
+    host: "ams-nl-ping.vultr.com"
+  - name: "Stockholm"
+    host: "sto-se-ping.vultr.com"
+  - name: "Madrid"
+    host: "mad-es-ping.vultr.com"
+  - name: "---"
+  # --- Africa, Middle East, South Asia, Oceania ---
+  - name: "Johannesburg"
+    host: "jnb-za-ping.vultr.com"
+  - name: "Tel Aviv"
+    host: "tlv-il-ping.vultr.com"
+  - name: "Mumbai"
+    host: "bom-in-ping.vultr.com"
+  - name: "Melbourne"
+    host: "mel-au-ping.vultr.com"

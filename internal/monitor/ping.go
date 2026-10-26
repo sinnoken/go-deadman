@@ -53,6 +53,18 @@ var (
 	lookupAddr = net.DefaultResolver.LookupAddr
 )
 
+// preferIPv4 從解析結果挑第一個 IPv4，沒有才用第一筆。
+// IPv6 在 Windows 一般權限下沒有 native 路徑（只能退回系統 ping），且不少網路沒有 IPv6，
+// 所以名稱解析的目標優先走 IPv4；要測 IPv6 請在設定中直接寫 IPv6 位址。
+func preferIPv4(ips []net.IP) net.IP {
+	for _, ip := range ips {
+		if ip.To4() != nil {
+			return ip
+		}
+	}
+	return ips[0]
+}
+
 func nextBackoff(cur time.Duration) time.Duration {
 	if cur < dnsRetryMin {
 		return dnsRetryMin
@@ -62,8 +74,11 @@ func nextBackoff(cur time.Duration) time.Duration {
 
 func runDevice(ctx context.Context, d *Device, interval time.Duration, jitter float64) {
 	d.mu.RLock()
-	name, ip := d.Name, d.IP
+	name, ip, host := d.Name, d.IP, d.Host
 	d.mu.RUnlock()
+	if host == "" {
+		host = name // 只寫 name 時，name 本身就是要解析的主機名稱
+	}
 
 	if name == "" && ip != "" {
 		if names, err := lookupAddr(ctx, ip); err == nil && len(names) > 0 {
@@ -75,8 +90,8 @@ func runDevice(ctx context.Context, d *Device, interval time.Duration, jitter fl
 
 	var backoff time.Duration
 	for ip == "" {
-		if ips, err := lookupIP(ctx, name); err == nil && len(ips) > 0 {
-			ip = ips[0].String()
+		if ips, err := lookupIP(ctx, host); err == nil && len(ips) > 0 {
+			ip = preferIPv4(ips).String()
 			break
 		}
 		d.mu.Lock()

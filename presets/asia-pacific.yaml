@@ -1,0 +1,33 @@
+# 亞太主要電信業者（量測其公共 DNS 或核心主機）
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Major Asia-Pacific carriers (their public DNS / core hosts)"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Japan and Korea ---
+  - name: "IIJ JP"
+    ip: "202.232.2.2"
+  - name: "KT KR"
+    ip: "168.126.63.1"
+  - name: "SK Broadband KR"
+    ip: "210.220.163.82"
+  - name: "LG U+ KR"
+    ip: "164.124.101.2"
+  - name: "---"
+  # --- Hong Kong and Southeast Asia ---
+  - name: "HKT HK"
+    ip: "205.252.144.228"
+  - name: "StarHub SG"
+    ip: "203.116.1.78"
+  - name: "VNPT VN"
+    ip: "203.162.4.191"
+  - name: "Viettel VN"
+    ip: "203.113.131.1"
+  - name: "PLDT PH"
+    host: "www.pldt.com"
+  - name: "---"
+  # --- Oceania ---
+  - name: "Telstra AU"
+    ip: "139.130.4.4"
+  - name: "Optus AU"
+    ip: "211.29.132.12"

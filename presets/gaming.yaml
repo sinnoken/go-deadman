@@ -1,0 +1,35 @@
+# 遊戲平台與商店
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Game platforms and stores"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Steam ---
+  - name: "Steam store"
+    host: "store.steampowered.com"
+  - name: "Steam API"
+    host: "api.steampowered.com"
+  - name: "Steam CDN"
+    host: "steamcdn-a.akamaihd.net"
+  - name: "---"
+  # --- Consoles ---
+  - name: "PlayStation"
+    host: "www.playstation.com"
+  - name: "Xbox"
+    host: "www.xbox.com"
+  - name: "Nintendo"
+    host: "www.nintendo.com"
+  - name: "---"
+  # --- Publishers ---
+  - name: "Riot Games"
+    host: "www.riotgames.com"
+  - name: "Battle.net"
+    host: "battle.net"
+  - name: "Epic Games"
+    host: "www.epicgames.com"
+  - name: "EA"
+    host: "www.ea.com"
+  - name: "Garena TW"
+    host: "www.garena.tw"
+  - name: "Gamania"
+    host: "www.gamania.com"

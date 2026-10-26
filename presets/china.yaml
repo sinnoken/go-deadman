@@ -1,0 +1,35 @@
+# 中國大陸三大電信、DNS 與主要網站
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Mainland China carriers, DNS and major sites"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Public DNS ---
+  - name: "AliDNS"
+    ip: "223.5.5.5"
+  - name: "AliDNS-2"
+    ip: "223.6.6.6"
+  - name: "DNSPod"
+    ip: "119.29.29.29"
+  - name: "Baidu DNS"
+    ip: "180.76.76.76"
+  - name: "CNNIC SDNS"
+    ip: "1.2.4.8"
+  - name: "---"
+  # --- Carriers ---
+  - name: "China Telecom Shanghai"
+    ip: "202.96.209.133"
+  - name: "China Telecom Guangdong"
+    ip: "202.96.128.86"
+  - name: "China Unicom Beijing"
+    ip: "123.125.81.6"
+  - name: "China Mobile Guangdong"
+    ip: "211.136.192.6"
+  - name: "---"
+  # --- Sites ---
+  - name: "Baidu"
+    host: "www.baidu.com"
+  - name: "QQ"
+    host: "www.qq.com"
+  - name: "Taobao"
+    host: "www.taobao.com"

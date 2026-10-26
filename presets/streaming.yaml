@@ -1,0 +1,31 @@
+# 影音串流服務
+# 驗證：2026-10-26，自台灣 HiNet 以 IPv4 ping 3 次全數回應
+description: "Video and music streaming services"
+interval: 1s
+jitter: 0.1
+devices:
+  # --- Video ---
+  - name: "YouTube"
+    host: "www.youtube.com"
+  - name: "YouTube video"
+    host: "redirector.googlevideo.com"
+  - name: "Netflix"
+    host: "www.netflix.com"
+  - name: "Netflix fast.com"
+    host: "fast.com"
+  - name: "Disney+"
+    host: "www.disneyplus.com"
+  - name: "Prime Video"
+    host: "www.primevideo.com"
+  - name: "Apple TV"
+    host: "tv.apple.com"
+  - name: "Twitch"
+    host: "www.twitch.tv"
+  - name: "Bilibili"
+    host: "www.bilibili.com"
+  - name: "---"
+  # --- Music ---
+  - name: "Spotify"
+    host: "open.spotify.com"
+  - name: "KKBOX"
+    host: "www.kkbox.com"

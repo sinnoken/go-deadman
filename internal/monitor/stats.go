@@ -20,6 +20,7 @@ type Device struct {
 	mu   sync.RWMutex // 讀寫鎖，分離「資料更新」與「畫面渲染」
 	Name string       `yaml:"name"`
 	IP   string       `yaml:"ip"`
+	Host string       `yaml:"host"` // 要解析的主機名稱；有它時 Name 只當顯示名稱，與 IP 擇一
 
 	isSep bool // 分隔列；由 LoadConfig 在 worker 啟動前設定，之後不再變動
 
