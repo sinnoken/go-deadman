@@ -6,6 +6,8 @@ go-deadman 是以 Bubble Tea 製作的 TUI，持續對一組目標發送 ICMP pi
 
 完整的建置／測試指令、各套件職責與慣例都寫在 [.github/copilot-instructions.md](.github/copilot-instructions.md)，修改前先讀那份。以下只列出容易踩到的重點。
 
+要把工作分派給多個 agent 時，依 [docs/agent-workflow.md](docs/agent-workflow.md) 的通用方法規劃角色與流程。
+
 ## 指令
 
 ```sh
